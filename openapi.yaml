@@ -1,0 +1,1659 @@
+openapi: 3.1.0
+info:
+  title: mag3nt API
+  version: "2026-05-21"
+  description: >
+    Payment infrastructure for AI agents. Issue virtual cards, pay for API access
+    via x402/AP2/MPP protocols, and settle in USDC on Base.
+  contact:
+    name: mag3nt
+    url: https://mag3nt.com
+  license:
+    name: Proprietary
+    url: https://github.com/mag3nt-com/mag3nt-node/blob/main/LICENSE
+
+servers:
+  - url: https://mag3nt.com
+    description: Production
+
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Cards
+    description: Virtual payment card lifecycle
+  - name: Keys
+    description: Developer API key management
+  - name: Funding
+    description: Treasury deposits and balances
+  - name: x402
+    description: HTTP 402 payment protocol
+  - name: AP2
+    description: Agent-to-Agent Payment Protocol
+  - name: MPP
+    description: Micropayment Protocol with streaming
+  - name: Pay Links
+    description: Shareable payment URLs
+  - name: Settlement
+    description: On-chain settlement status
+  - name: Status
+    description: System health and configuration
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "API key prefixed with 'Bearer sx_live_...'"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: "Card not found"
+
+    BalanceError:
+      type: object
+      required: [error, available, requested]
+      properties:
+        error:
+          type: string
+          example: "Insufficient balance"
+        available:
+          type: number
+          example: 40
+        requested:
+          type: number
+          example: 50
+        network:
+          type: string
+          example: "eip155:8453"
+        asset:
+          type: string
+          example: "USDC"
+
+    Card:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "sx_a66a6666-1234-5678-9abc-def012345678"
+        token:
+          type: string
+          example: "tok_3b9fe670-abcd-efgh-ijkl-mnopqrstuvwx"
+        purpose:
+          type: string
+          example: "Research Agent"
+        limit_amount:
+          type: number
+          example: 50
+        status:
+          type: string
+          enum: [ACTIVE, FROZEN, EXPIRED, USED, PENDING_FUNDING, FUNDING_FAILED]
+          example: "ACTIVE"
+        mcc_locks:
+          type: string
+          example: ""
+        single_use:
+          type: integer
+          enum: [0, 1]
+          example: 0
+        expires_at:
+          type: ['string', 'null']
+          format: date-time
+        funding_network:
+          type: string
+          example: "eip155:8453"
+        funding_asset:
+          type: string
+          example: "USDC"
+        wallet_address:
+          type: string
+          example: "0x1234...abcd"
+        balance:
+          type: number
+          example: 0
+        remaining:
+          type: number
+          example: 50
+        created_at:
+          type: string
+          format: date-time
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "txn_a1b2c3d4-..."
+        card_id:
+          type: string
+        amount:
+          type: number
+        merchant:
+          type: string
+        protocol:
+          type: string
+          enum: [x402, ap2, mpp]
+        status:
+          type: string
+        tx_hash:
+          type: string
+        network:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ApiKey:
+      type: object
+      properties:
+        key_hash:
+          type: string
+        key_hint:
+          type: string
+          example: "sx_live_a1b2...wxyz"
+        status:
+          type: string
+          enum: [active, revoked]
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: ['string', 'null']
+          format: date-time
+
+    Balance:
+      type: object
+      properties:
+        total_funded:
+          type: number
+        total_allocated:
+          type: number
+        total_spent:
+          type: number
+        available:
+          type: number
+        network:
+          type: string
+        asset:
+          type: string
+
+    PayLink:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+          example: "PL_a1b2c3d4"
+        url:
+          type: string
+          example: "https://mag3nt.com/pay/PL_a1b2c3d4"
+        amount:
+          type: ['number', 'null']
+        asset:
+          type: string
+        network:
+          type: string
+        memo:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, CANCELLED]
+        uses:
+          type: integer
+        max_uses:
+          type: integer
+        expires_at:
+          type: ['string', 'null']
+          format: date-time
+        qr_svg:
+          type: string
+
+    PaymentHeader:
+      type: object
+      properties:
+        X-mag3nt-Transaction:
+          type: string
+        X-mag3nt-Card:
+          type: string
+        X-mag3nt-Amount:
+          type: string
+        X-mag3nt-Protocol:
+          type: string
+
+paths:
+  # ═══════════════ CARDS ═══════════════
+  /api/cards:
+    get:
+      tags: [Cards]
+      operationId: cardsList
+      summary: List all cards for the authenticated wallet
+      responses:
+        "200":
+          description: Cards list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cards:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Card"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/issue:
+    post:
+      tags: [Cards]
+      operationId: cardsCreate
+      summary: Issue a new virtual payment card
+      description: >
+        Creates a card backed by your treasury balance. Provide `tx_hash` for
+        UI pay-and-issue flow (card starts as PENDING_FUNDING). Omit `tx_hash`
+        to allocate from pre-funded balance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purpose, limit_amount]
+              properties:
+                purpose:
+                  type: string
+                  description: Human-readable label for the card
+                  example: "Research Agent"
+                limit_amount:
+                  type: number
+                  description: Maximum spend in USDC
+                  example: 50
+                network:
+                  type: string
+                  default: "eip155:8453"
+                asset:
+                  type: string
+                  default: "USDC"
+                tx_hash:
+                  type: string
+                  description: On-chain funding transaction hash (optional)
+                mcc_locks:
+                  type: string
+                  description: Comma-separated merchant category codes
+                single_use:
+                  type: boolean
+                  default: false
+                expires_in:
+                  type: number
+                  description: Hours until expiry (0 = never)
+            example:
+              purpose: "Research Agent"
+              limit_amount: 50
+              network: "eip155:8453"
+      responses:
+        "200":
+          description: Card created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  card:
+                    $ref: "#/components/schemas/Card"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceError"
+
+  /api/issue/bulk:
+    post:
+      tags: [Cards]
+      operationId: cardsBulkCreate
+      summary: Issue multiple cards in a single atomic request
+      description: >
+        Creates up to 1000 cards atomically. All cards are allocated from
+        treasury balance in a single atomic operation. Supports idempotency via header.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+          description: Unique key to prevent duplicate bulk operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cards]
+              properties:
+                cards:
+                  type: array
+                  items:
+                    type: object
+                    required: [purpose, limit_amount]
+                    properties:
+                      purpose:
+                        type: string
+                      limit_amount:
+                        type: number
+                network:
+                  type: string
+                  default: "eip155:8453"
+                asset:
+                  type: string
+                  default: "USDC"
+      responses:
+        "200":
+          description: Cards created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  cards:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Card"
+                  total_allocated:
+                    type: number
+        "403":
+          description: Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceError"
+
+  /api/cards/{id}/freeze:
+    post:
+      tags: [Cards]
+      operationId: cardsFreeze
+      summary: Freeze a card to block all transactions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Card frozen
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  card_id:
+                    type: string
+                  status:
+                    type: string
+                    example: "FROZEN"
+
+  /api/cards/{id}/unfreeze:
+    post:
+      tags: [Cards]
+      operationId: cardsUnfreeze
+      summary: Unfreeze a previously frozen card
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Card unfrozen
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  card_id:
+                    type: string
+                  status:
+                    type: string
+                    example: "ACTIVE"
+
+  /api/cards/{id}/claim:
+    post:
+      tags: [Cards]
+      operationId: cardsClaim
+      summary: Claim a card using its token
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: Card claimed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+
+  /api/cards/{id}/controls:
+    patch:
+      tags: [Cards]
+      operationId: cardsUpdateControls
+      summary: Update card spending controls
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mcc_locks:
+                  type: string
+                daily_limit:
+                  type: number
+                max_transaction:
+                  type: number
+      responses:
+        "200":
+          description: Controls updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/cards/{id}/transactions:
+    get:
+      tags: [Cards]
+      operationId: cardsListTransactions
+      summary: List transactions for a card
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transactions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Transaction"
+
+  # ═══════════════ KEYS ═══════════════
+  /api/keys/generate:
+    post:
+      tags: [Keys]
+      operationId: keysCreate
+      summary: Generate a new API key
+      description: Returns the raw key once. Store it securely — it cannot be retrieved again.
+      responses:
+        "200":
+          description: Key generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    type: string
+                    example: "sx_live_..."
+
+  /api/keys:
+    get:
+      tags: [Keys]
+      operationId: keysList
+      summary: List all API keys for the authenticated wallet
+      responses:
+        "200":
+          description: Keys list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ApiKey"
+
+  /api/keys/{hash}:
+    delete:
+      tags: [Keys]
+      operationId: keysRevoke
+      summary: Revoke an API key
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Key revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/keys/validate:
+    post:
+      tags: [Keys]
+      operationId: keysValidate
+      summary: Validate an API key
+      responses:
+        "200":
+          description: Key valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  wallet_address:
+                    type: string
+                  authenticated_at:
+                    type: string
+                    format: date-time
+
+  # ═══════════════ FUNDING ═══════════════
+
+  /api/funding/tokens:
+    get:
+      tags: [Funding]
+      operationId: fundingListTokens
+      summary: List accepted tokens per network
+      security: []
+      responses:
+        "200":
+          description: Token registry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  registry:
+                    type: object
+                    description: Map of CAIP-2 network IDs to supported tokens
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          symbol:
+                            type: string
+                            example: "USDC"
+                          type:
+                            type: string
+                            example: "erc20"
+                          decimals:
+                            type: integer
+                            example: 6
+                          contract:
+                            type: string
+                            example: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                    example:
+                      "eip155:8453":
+                        - symbol: "USDC"
+                          type: "erc20"
+                          decimals: 6
+                          contract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+
+  /api/balance:
+    get:
+      tags: [Funding]
+      operationId: fundingGetBalance
+      summary: Get treasury balance for authenticated wallet
+      responses:
+        "200":
+          description: Balance data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balances:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Balance"
+
+  /api/wallet/balance:
+    get:
+      tags: [Funding]
+      operationId: fundingGetWalletBalance
+      summary: Get on-chain wallet USDC balance
+      responses:
+        "200":
+          description: On-chain balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance:
+                    type: number
+                  address:
+                    type: string
+                  network:
+                    type: string
+                  asset:
+                    type: string
+
+
+
+  # ═══════════════ x402 ═══════════════
+  /api/x402/pay:
+    post:
+      tags: [x402]
+      operationId: x402Pay
+      summary: Pay for a service via x402 protocol
+      description: >
+        Authorizes a payment against a funded card. The card must be ACTIVE with
+        sufficient allocation. Returns payment headers the agent can attach to
+        retry the original 402 request.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, card_token, amount]
+              properties:
+                card_id:
+                  type: string
+                  description: Card identifier (sx_...)
+                  example: "sx_a66a6666-1234-5678-9abc-def012345678"
+                card_token:
+                  type: string
+                  description: Card secret token (tok_...)
+                  example: "tok_3b9fe670-abcd-efgh-ijkl-mnopqrstuvwx"
+                amount:
+                  type: number
+                  description: Payment amount in USDC
+                  example: 0.50
+                merchant:
+                  type: string
+                  description: Merchant identifier
+                  example: "weather-api.com"
+                merchant_address:
+                  type: string
+                  description: Merchant wallet for settlement
+                  example: "0xABC..."
+                mcc:
+                  type: string
+                  description: Merchant category code
+                resource_url:
+                  type: string
+                  description: URL being paid for
+                network:
+                  type: string
+                  default: "eip155:8453"
+            example:
+              card_id: "sx_a66a6666-..."
+              card_token: "tok_3b9fe670-..."
+              amount: 0.50
+              merchant: "weather-api.com"
+              merchant_address: "0xABC..."
+              network: "eip155:8453"
+      responses:
+        "200":
+          description: Payment authorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  transaction_id:
+                    type: string
+                  card_id:
+                    type: string
+                  amount:
+                    type: number
+                  network:
+                    type: string
+                  resource_url:
+                    type: ['string', 'null']
+                  protocol:
+                    type: string
+                    example: "x402"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  payment_header:
+                    $ref: "#/components/schemas/PaymentHeader"
+              example:
+                success: true
+                transaction_id: "txn_abc123"
+                card_id: "sx_a66a6666-..."
+                amount: 0.50
+                protocol: "x402"
+                payment_header:
+                  X-mag3nt-Transaction: "txn_abc123"
+                  X-mag3nt-Amount: "0.5"
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid card token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Card inactive or spending limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Card not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/x402/discover:
+    get:
+      tags: [x402]
+      operationId: x402Discover
+      summary: Discover x402 payment requirements for a URL
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Discovery result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  supports_x402:
+                    type: boolean
+                  payment_address:
+                    type: string
+                  amount:
+                    type: number
+                  asset:
+                    type: string
+
+  /api/x402/receive:
+    post:
+      tags: [x402]
+      operationId: x402Receive
+      summary: Verify and accept an x402 payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment_header:
+                  type: object
+                resource_url:
+                  type: string
+      responses:
+        "200":
+          description: Payment verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                  resource:
+                    type: string
+
+  # ═══════════════ STATUS ═══════════════
+  /api/status:
+    get:
+      tags: [Status]
+      operationId: statusGet
+      summary: Get platform status, supported protocols, and capabilities
+      security: []
+      responses:
+        "200":
+          description: Platform status and protocol manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  platform:
+                    type: string
+                    example: "mag3nt"
+                  version:
+                    type: string
+                    example: "0.5.0"
+                  model:
+                    type: string
+                    example: "bidirectional"
+                  protocols:
+                    type: object
+                    properties:
+                      x402:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          direction:
+                            type: string
+                          spend:
+                            type: string
+                          receive:
+                            type: string
+                          discovery:
+                            type: string
+                          networks:
+                            type: array
+                            items:
+                              type: string
+                          schemes:
+                            type: array
+                            items:
+                              type: string
+                      ap2:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          direction:
+                            type: string
+                          spend:
+                            type: string
+                          receive:
+                            type: string
+                      mpp:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          direction:
+                            type: string
+                          spend:
+                            type: string
+                          receive:
+                            type: string
+                          capabilities:
+                            type: array
+                            items:
+                              type: string
+                      settlement:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          fee_model:
+                            type: string
+                          supported_networks:
+                            type: array
+                            items:
+                              type: string
+                  card_controls:
+                    type: object
+                    properties:
+                      mcc_locks:
+                        type: boolean
+                      single_use:
+                        type: boolean
+                      freeze_unfreeze:
+                        type: boolean
+                      spending_limits:
+                        type: boolean
+
+  /api/config:
+    get:
+      tags: [Status]
+      operationId: statusGetConfig
+      summary: Get treasury addresses and token registry
+      security: []
+      responses:
+        "200":
+          description: Configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  treasury:
+                    type: object
+                    properties:
+                      evm:
+                        type: string
+                      solana:
+                        type: string
+                  tokens:
+                    type: object
+
+  # ═══════════════ AP2 ═══════════════
+  /api/ap2/agent-card:
+    get:
+      tags: [AP2]
+      operationId: ap2GetAgentCard
+      summary: Get the default agent card for AP2 payments
+      responses:
+        "200":
+          description: Agent card
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_card:
+                    $ref: "#/components/schemas/Card"
+
+  /api/ap2/payment-methods:
+    post:
+      tags: [AP2]
+      operationId: ap2ListPaymentMethods
+      summary: List available payment methods for AP2
+      responses:
+        "200":
+          description: Payment methods
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  methods:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        card_id:
+                          type: string
+                        available:
+                          type: number
+
+  /api/ap2/mandate:
+    post:
+      tags: [AP2]
+      operationId: ap2CreateMandate
+      summary: Create a spending mandate for recurring AP2 payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, card_token, amount, merchant]
+              properties:
+                card_id:
+                  type: string
+                card_token:
+                  type: string
+                amount:
+                  type: number
+                merchant:
+                  type: string
+                max_amount:
+                  type: number
+                expires_at:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: Mandate created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mandate_id:
+                    type: string
+                  status:
+                    type: string
+
+  /api/ap2/execute:
+    post:
+      tags: [AP2]
+      operationId: ap2Execute
+      summary: Execute a payment against an AP2 mandate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, card_token, amount]
+              properties:
+                card_id:
+                  type: string
+                card_token:
+                  type: string
+                amount:
+                  type: number
+                mandate_id:
+                  type: string
+      responses:
+        "200":
+          description: Payment executed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  transaction_id:
+                    type: string
+
+  /api/ap2/mandates/{card_id}:
+    get:
+      tags: [AP2]
+      operationId: ap2ListMandates
+      summary: List mandates for a card
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Mandates list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mandates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mandate_id:
+                          type: string
+                        merchant:
+                          type: string
+                        amount:
+                          type: number
+                        status:
+                          type: string
+
+
+  # ═══════════════ MPP ═══════════════
+  /api/mpp/pay:
+    post:
+      tags: [MPP]
+      operationId: mppPay
+      summary: Make a micropayment via MPP protocol
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, card_token, amount]
+              properties:
+                card_id:
+                  type: string
+                card_token:
+                  type: string
+                amount:
+                  type: number
+                merchant:
+                  type: string
+                merchant_address:
+                  type: string
+                network:
+                  type: string
+                  default: "eip155:8453"
+      responses:
+        "200":
+          description: Payment authorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  transaction_id:
+                    type: string
+
+  /api/mpp/session:
+    post:
+      tags: [MPP]
+      operationId: mppCreateSession
+      summary: Create an MPP payment session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, card_token, merchant]
+              properties:
+                card_id:
+                  type: string
+                card_token:
+                  type: string
+                merchant:
+                  type: string
+      responses:
+        "200":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+
+  /api/mpp/discover:
+    get:
+      tags: [MPP]
+      operationId: mppDiscover
+      summary: Discover MPP capabilities for a URL
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Discovery result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  supports_mpp:
+                    type: boolean
+                  capabilities:
+                    type: object
+
+  /api/mpp/receive:
+    post:
+      tags: [MPP]
+      operationId: mppReceive
+      summary: Verify and accept an MPP payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment_data:
+                  type: object
+      responses:
+        "200":
+          description: Payment verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+
+  /api/mpp/stream/open:
+    post:
+      tags: [MPP]
+      operationId: mppStreamsOpen
+      summary: Open a payment stream for continuous micropayments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, card_token, budget, tick_amount]
+              properties:
+                card_id:
+                  type: string
+                card_token:
+                  type: string
+                budget:
+                  type: number
+                  description: Total budget for the stream in USDC
+                tick_amount:
+                  type: number
+                  description: Amount per tick
+                receiver_card_id:
+                  type: string
+      responses:
+        "200":
+          description: Stream opened
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  card_id:
+                    type: string
+                  budget:
+                    type: number
+                  tick_amount:
+                    type: number
+                  total_ticked:
+                    type: number
+                  status:
+                    type: string
+                  receiver_card_id:
+                    type: string
+
+  /api/mpp/stream/tick:
+    post:
+      tags: [MPP]
+      operationId: mppStreamsTick
+      summary: Advance a payment stream by one tick
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stream_id, card_id, card_token]
+              properties:
+                stream_id:
+                  type: string
+                card_id:
+                  type: string
+                card_token:
+                  type: string
+      responses:
+        "200":
+          description: Tick processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_ticked:
+                    type: number
+                  remaining:
+                    type: number
+
+  /api/mpp/stream/close:
+    post:
+      tags: [MPP]
+      operationId: mppStreamsClose
+      summary: Close a payment stream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stream_id]
+              properties:
+                stream_id:
+                  type: string
+      responses:
+        "200":
+          description: Stream closed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  final_amount:
+                    type: number
+                  status:
+                    type: string
+
+  /api/mpp/stream/{id}:
+    get:
+      tags: [MPP]
+      operationId: mppStreamsGet
+      summary: Get payment stream details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stream details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  card_id:
+                    type: string
+                  budget:
+                    type: number
+                  tick_amount:
+                    type: number
+                  total_ticked:
+                    type: number
+                  status:
+                    type: string
+
+  # ═══════════════ PAY LINKS ═══════════════
+  /api/paylinks:
+    post:
+      tags: [Pay Links]
+      operationId: payLinksCreate
+      summary: Create a shareable payment link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id]
+              properties:
+                card_id:
+                  type: string
+                amount:
+                  type: ['number', 'null']
+                  description: Fixed amount (null for open-amount)
+                memo:
+                  type: string
+                type:
+                  type: string
+                  enum: [SINGLE, RECURRING]
+                  default: SINGLE
+                  description: SINGLE for one-time, RECURRING for multi-use
+                max_uses:
+                  type: integer
+                  default: 1
+                expires_in:
+                  type: number
+                  description: Hours until expiry
+      responses:
+        "200":
+          description: Pay link created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  pay_link:
+                    $ref: "#/components/schemas/PayLink"
+    get:
+      tags: [Pay Links]
+      operationId: payLinksList
+      summary: List pay links for authenticated wallet
+      responses:
+        "200":
+          description: Pay links list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pay_links:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PayLink"
+
+  /api/paylinks/{code}:
+    get:
+      tags: [Pay Links]
+      operationId: payLinksGet
+      summary: Get public pay link details
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pay link details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayLink"
+    delete:
+      tags: [Pay Links]
+      operationId: payLinksCancel
+      summary: Cancel a pay link
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/paylinks/{code}/status:
+    get:
+      tags: [Pay Links]
+      operationId: payLinksGetStatus
+      summary: Check pay link payment status
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  confirmed_at:
+                    type: ['string', 'null']
+                    format: date-time
+
+  /api/pay/{code}/resolve:
+    get:
+      tags: [Pay Links]
+      operationId: payLinksResolve
+      summary: Resolve a pay link for payment processing
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Resolved data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [receive, merchant]
+
+  /api/pay/{code}/prepare:
+    get:
+      tags: [Pay Links]
+      operationId: payLinksPrepare
+      summary: Prepare payment intent for a pay link
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment intent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent:
+                    type: string
+                  accepted_protocols:
+                    type: array
+                    items:
+                      type: string
+                  treasury_address:
+                    type: string
+                  token_contract:
+                    type: string
+
+  /api/pay/{code}/settle:
+    post:
+      tags: [Pay Links]
+      operationId: payLinksSettle
+      summary: Settle a pay link payment
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    protocol:
+                      type: string
+                    payer_card_id:
+                      type: string
+                    payer_card_token:
+                      type: string
+                - type: object
+                  properties:
+                    tx_hash:
+                      type: string
+                    from_address:
+                      type: string
+                    amount:
+                      type: number
+      responses:
+        "200":
+          description: Settlement processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  transaction_id:
+                    type: string
+
+  # ═══════════════ SETTLEMENT ═══════════════
+  /api/settlement/status/{txn_id}:
+    get:
+      tags: [Settlement]
+      operationId: settlementGetStatus
+      summary: Check settlement status for a transaction
+      parameters:
+        - name: txn_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Settlement status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction_id:
+                    type: string
+                  status:
+                    type: string
+                  tx_hash:
+                    type: ['string', 'null']
+                  settled_at:
+                    type: ['string', 'null']
+                    format: date-time
+

@@ -1,0 +1,52 @@
+---
+title: "mag3nt"
+description: "Payment infrastructure for AI agents. Issue virtual cards, pay for APIs, settle in USDC."
+---
+
+## What is mag3nt?
+
+mag3nt gives AI agents the ability to **spend and earn money** autonomously. Issue virtual payment cards, pay for API access via open protocols (x402, AP2, MPP), and settle everything in USDC on Base.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Issue your first card in 5 minutes
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    42 endpoints — fully typed, interactive docs
+  </Card>
+  <Card title="TypeScript SDK" icon="js" href="/sdks/typescript">
+    npm install @mag3nt/sdk
+  </Card>
+  <Card title="Python SDK" icon="python" href="/sdks/python">
+    pip install mag3nt
+  </Card>
+</CardGroup>
+
+## How it works
+
+<Steps>
+  <Step title="Fund your treasury">
+    Send USDC to your treasury address on Base (or any supported network). Your balance is available instantly.
+  </Step>
+  <Step title="Issue cards">
+    Create virtual payment cards backed by your treasury balance. Each card has its own spending limit, controls, and purpose.
+  </Step>
+  <Step title="Agents pay autonomously">
+    Your agents use cards to pay for APIs via x402, AP2, or MPP protocols. Every transaction is tracked and auditable.
+  </Step>
+  <Step title="Automatic settlement">
+    Payments settle on-chain in USDC automatically. 0.5% + $0.05 per transaction.
+  </Step>
+</Steps>
+
+## Supported protocols
+
+| Protocol | Direction | Use case |
+|----------|-----------|----------|
+| **x402** | Bidirectional | HTTP 402 payment-required flows — agent pays for API access |
+| **AP2** | Bidirectional | Agent-to-agent payments with spending mandates |
+| **MPP** | Bidirectional | Micropayment streaming — pay-per-token, pay-per-call |
+
+## Supported networks
+
+Base (primary), Ethereum, Arbitrum, Optimism, Polygon, Avalanche, Zora, Solana — all settling in USDC.

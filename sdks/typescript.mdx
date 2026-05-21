@@ -1,0 +1,82 @@
+---
+title: "TypeScript SDK"
+description: "Install and configure the mag3nt TypeScript SDK."
+---
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @mag3nt/sdk
+```
+```bash pnpm
+pnpm add @mag3nt/sdk
+```
+```bash yarn
+yarn add @mag3nt/sdk
+```
+</CodeGroup>
+
+## Setup
+
+```typescript
+import { Mag3nt } from "@mag3nt/sdk";
+
+const mag3nt = new Mag3nt({
+  serverURL: "https://mag3nt.com",
+  security: {
+    bearerAuth: process.env.MAG3NT_API_KEY,
+  },
+});
+```
+
+## Usage
+
+```typescript
+// Issue a card
+const card = await mag3nt.cards.cardsCreate({
+  purpose: "Research Agent",
+  limitAmount: 50,
+});
+
+// Pay for an API
+const payment = await mag3nt.x402.x402Pay({
+  cardId: card.card.id,
+  cardToken: card.card.token,
+  amount: 0.50,
+  merchant: "weather-api.com",
+});
+
+// Check balance
+const balance = await mag3nt.funding.fundingGetBalance();
+```
+
+## Error handling
+
+```typescript
+import * as errors from "@mag3nt/sdk/models/errors";
+
+try {
+  await mag3nt.cards.cardsCreate({ purpose: "Agent", limitAmount: 100 });
+} catch (error) {
+  if (error instanceof errors.BalanceError) {
+    console.log(`Need ${error.data$.requested}, have ${error.data$.available}`);
+  }
+}
+```
+
+## Available methods
+
+| Module | Description |
+|--------|-------------|
+| `mag3nt.keys` | API key management |
+| `mag3nt.cards` | Card issuance, controls, and transactions |
+| `mag3nt.funding` | Balance and deposits |
+| `mag3nt.x402` | x402 protocol payments |
+| `mag3nt.ap2` | Agent-to-agent payments |
+| `mag3nt.mpp` | Micropayment streaming |
+| `mag3nt.payLinks` | Shareable payment links |
+| `mag3nt.settlement` | Settlement status |
+| `mag3nt.status` | Platform health |
+
+See the [API Reference](/api-reference) for full method documentation.

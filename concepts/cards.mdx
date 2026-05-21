@@ -1,0 +1,99 @@
+---
+title: "Cards"
+description: "Virtual payment cards for AI agents — issuance, controls, and lifecycle."
+---
+
+## Overview
+
+Cards are the core primitive. Each card is a virtual payment instrument backed by your USDC treasury balance. Agents use cards to pay for APIs, services, and resources.
+
+## Card lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> ACTIVE: Funded from balance
+    [*] --> PENDING_FUNDING: Pay-and-issue (tx_hash)
+    PENDING_FUNDING --> ACTIVE: On-chain confirmed
+    PENDING_FUNDING --> FUNDING_FAILED: Timeout (30min)
+    ACTIVE --> FROZEN: cardsFreeze
+    FROZEN --> ACTIVE: cardsUnfreeze
+    ACTIVE --> USED: Single-use card spent
+    ACTIVE --> EXPIRED: TTL elapsed
+```
+
+## Issue a card
+
+<CodeGroup>
+```typescript TypeScript
+const card = await mag3nt.cards.cardsCreate({
+  purpose: "Research Agent",
+  limitAmount: 50,        // Max spend in USDC
+  network: "eip155:8453", // Base
+  asset: "USDC",
+  singleUse: false,       // Reusable
+  expiresIn: 24,          // Hours (0 = never)
+});
+```
+```python Python
+card = sdk.cards.cards_create(
+    purpose="Research Agent",
+    limit_amount=50,
+    network="eip155:8453",
+    asset="USDC",
+    single_use=False,
+    expires_in=24,
+)
+```
+</CodeGroup>
+
+## Bulk issuance
+
+Create up to 1,000 cards atomically:
+
+```typescript
+const batch = await mag3nt.cards.cardsBulkCreate({
+  cards: [
+    { purpose: "Agent Alpha", limitAmount: 25 },
+    { purpose: "Agent Beta", limitAmount: 25 },
+    { purpose: "Agent Gamma", limitAmount: 50 },
+  ],
+  network: "eip155:8453",
+  asset: "USDC",
+});
+// All-or-nothing: if total exceeds balance, none are created
+```
+
+## Spending controls
+
+### MCC locks
+
+Restrict which merchant categories a card can pay:
+
+```typescript
+await mag3nt.cards.cardsUpdateControls(cardId, {
+  mccLocks: "5411,5812", // Only grocery and restaurants
+});
+```
+
+### Freeze / unfreeze
+
+Instantly block all transactions on a compromised card:
+
+```typescript
+await mag3nt.cards.cardsFreeze(cardId);
+// Card is immediately blocked — no payments can process
+
+await mag3nt.cards.cardsUnfreeze(cardId);
+// Card is restored to ACTIVE
+```
+
+## Audit trail
+
+Every transaction is recorded with full metadata:
+
+```typescript
+const txns = await mag3nt.cards.cardsListTransactions(cardId);
+for (const txn of txns.transactions) {
+  console.log(`${txn.amount} USDC to ${txn.merchant} via ${txn.protocol}`);
+}
+```

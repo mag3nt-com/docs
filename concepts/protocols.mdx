@@ -1,0 +1,123 @@
+---
+title: "Payment Protocols"
+description: "x402, AP2, and MPP — three protocols for agent-to-service and agent-to-agent payments."
+---
+
+## Overview
+
+mag3nt supports three open payment protocols. Each serves a different use case:
+
+| Protocol | Best for | Direction |
+|----------|----------|-----------|
+| **x402** | Paying for API access (HTTP 402 flows) | Bidirectional |
+| **AP2** | Agent-to-agent payments with mandates | Bidirectional |
+| **MPP** | Micropayment streaming (pay-per-token) | Bidirectional |
+
+## x402 — HTTP 402 Payment Protocol
+
+When an API returns `HTTP 402 Payment Required`, your agent can pay using x402:
+
+```typescript
+// 1. Agent calls an API, gets 402
+// 2. Pay via mag3nt
+const payment = await mag3nt.x402.x402Pay({
+  cardId: "sx_...",
+  cardToken: "tok_...",
+  amount: 0.50,
+  merchant: "weather-api.com",
+  merchantAddress: "0xABC...",
+  resourceUrl: "https://weather-api.com/forecast",
+});
+
+// 3. Retry the original request with payment headers
+const response = await fetch("https://weather-api.com/forecast", {
+  headers: payment.headers,
+});
+```
+
+### Receive x402 payments
+
+If you're building an API that accepts x402:
+
+```typescript
+const receipt = await mag3nt.x402.x402Receive({
+  paymentHeader: req.headers["x-payment"],
+  resourceUrl: "https://your-api.com/data",
+  amount: 0.10,
+});
+```
+
+## AP2 — Agent-to-Agent Protocol
+
+For recurring agent-to-agent payments with spending mandates:
+
+```typescript
+// Create a mandate: "Agent B can spend up to $10/day from my card"
+const mandate = await mag3nt.ap2.ap2CreateMandate({
+  cardId: "sx_...",
+  cardToken: "tok_...",
+  maxAmount: 10,
+  period: "daily",
+  grantee: "0xAgentB...",
+});
+
+// Agent B executes payments against the mandate
+const payment = await mag3nt.ap2.ap2Execute({
+  mandateId: mandate.mandateId,
+  amount: 2.50,
+  description: "Data processing fee",
+});
+```
+
+## MPP — Micropayment Protocol
+
+For streaming micropayments (pay-per-token, pay-per-API-call):
+
+### One-time micropayment
+
+```typescript
+const payment = await mag3nt.mpp.mppPay({
+  cardId: "sx_...",
+  cardToken: "tok_...",
+  amount: 0.01,
+  merchantCardId: "sx_merchant...",
+});
+```
+
+### Payment streams
+
+Open a continuous payment channel:
+
+```typescript
+// Open stream with $5 budget
+const stream = await mag3nt.mpp.mppStreamsOpen({
+  payerCardId: "sx_payer...",
+  payerCardToken: "tok_...",
+  receiverCardId: "sx_receiver...",
+  budget: 5.0,
+});
+
+// Send micro-payments as resources are consumed
+await mag3nt.mpp.mppStreamsTick({
+  streamId: stream.stream.id,
+  amount: 0.001,
+  resource: "token-generation",
+});
+
+// Check running totals
+const status = await mag3nt.mpp.mppStreamsGet(stream.stream.id);
+console.log(`Spent: ${status.stream.totalSettled} / ${status.stream.budget}`);
+
+// Close when done
+await mag3nt.mpp.mppStreamsClose({ streamId: stream.stream.id });
+```
+
+## Choosing a protocol
+
+Pick the protocol that matches your use case:
+
+- **x402** — your agent pays for third-party APIs that return HTTP 402
+- **AP2** — your agent delegates spending to other agents with mandates
+- **MPP** — your agent streams payments in real-time (pay-per-token, pay-per-call)
+
+All three are first-class. Use one, or combine them.

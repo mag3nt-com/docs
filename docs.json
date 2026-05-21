@@ -1,0 +1,94 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "mag3nt",
+  "colors": {
+    "primary": "#ff6a1a",
+    "light": "#ff8a4c",
+    "dark": "#e55a0a"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/cards",
+              "concepts/funding",
+              "concepts/protocols",
+              "concepts/settlement"
+            ]
+          },
+          {
+            "group": "SDKs",
+            "pages": [
+              "sdks/typescript",
+              "sdks/python"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "openapi": "/openapi.yaml"
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/mag3nt-com",
+          "icon": "github"
+        },
+        {
+          "anchor": "Dashboard",
+          "href": "https://mag3nt.com",
+          "icon": "browser"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Dashboard",
+        "href": "https://mag3nt.com"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get API Key",
+      "href": "https://mag3nt.com"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "cursor",
+      "vscode"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/mag3nt-com"
+    }
+  }
+}

@@ -1,0 +1,82 @@
+---
+title: "Python SDK"
+description: "Install and configure the mag3nt Python SDK."
+---
+
+## Installation
+
+```bash
+pip install mag3nt
+```
+
+## Setup
+
+```python
+import mag3nt
+from mag3nt.models.components import Security
+import os
+
+sdk = mag3nt.Mag3nt(
+    server_url="https://mag3nt.com",
+    security=Security(bearer_auth=os.environ["MAG3NT_API_KEY"]),
+)
+```
+
+## Usage
+
+```python
+# Issue a card
+card = sdk.cards.cards_create(
+    purpose="Research Agent",
+    limit_amount=50,
+)
+
+# Check balance
+balance = sdk.funding.funding_get_balance()
+
+# List transactions
+txns = sdk.cards.cards_list_transactions(id=card.card.id)
+```
+
+## Async support
+
+Every method has an async variant with the `_async` suffix:
+
+```python
+import asyncio
+
+async def main():
+    cards = await sdk.cards.cards_list_async()
+    balance = await sdk.funding.funding_get_balance_async()
+
+asyncio.run(main())
+```
+
+## Error handling
+
+```python
+from mag3nt.models.errors import BalanceError, Mag3ntError
+
+try:
+    sdk.cards.cards_create(purpose="Agent", limit_amount=100)
+except BalanceError as e:
+    print(f"Need {e.requested}, have {e.available}")
+except Mag3ntError as e:
+    print(f"Error: {e.status_code}")
+```
+
+## Available methods
+
+| Module | Description |
+|--------|-------------|
+| `sdk.keys` | API key management |
+| `sdk.cards` | Card issuance, controls, and transactions |
+| `sdk.funding` | Balance and deposits |
+| `sdk.x402` | x402 protocol payments |
+| `sdk.ap2` | Agent-to-agent payments |
+| `sdk.mpp` | Micropayment streaming |
+| `sdk.pay_links` | Shareable payment links |
+| `sdk.settlement` | Settlement status |
+| `sdk.status` | Platform health |
+
+See the [API Reference](/api-reference) for full method documentation.
