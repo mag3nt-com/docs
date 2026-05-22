@@ -97,3 +97,53 @@ for (const txn of txns.transactions) {
   console.log(`${txn.amount} USDC to ${txn.merchant} via ${txn.protocol}`);
 }
 ```
+
+## Sandbox & testnet
+
+mag3nt uses **network-based** environment isolation — no separate test API keys needed. Issue a card on a testnet network to activate sandbox mode:
+
+<CodeGroup>
+```typescript TypeScript
+const testCard = await mag3nt.cards.cardsCreate({
+  purpose: "Testing Agent",
+  limitAmount: 100,
+  network: "eip155:84532",  // Base Sepolia = sandbox
+  asset: "USDC",
+});
+```
+```python Python
+test_card = sdk.cards.cards_create(
+    purpose="Testing Agent",
+    limit_amount=100,
+    network="eip155:84532",  # Base Sepolia = sandbox
+    asset="USDC",
+)
+```
+</CodeGroup>
+
+### How it works
+
+| Card network | Environment | Settlement |
+|---|---|---|
+| `eip155:8453` (Base) | `production` | Real USDC settled on-chain |
+| `eip155:84532` (Base Sepolia) | `sandbox` | Balance deducted, **no on-chain settlement** |
+
+Every payment response includes an `environment` field:
+
+```json
+{
+  "success": true,
+  "environment": "sandbox",
+  "payment_header": {
+    "X-mag3nt-Environment": "sandbox"
+  }
+}
+```
+
+<Warning>
+  Sandbox transactions deduct from your card balance just like production, but they are **never settled on-chain**. The settlement engine permanently skips all `SANDBOX` transactions.
+</Warning>
+
+### Same API key, same endpoints
+
+Your API key works for both environments. The card's funding network is the boundary — not the key, not the endpoint. A single account can have both mainnet and testnet cards simultaneously.
