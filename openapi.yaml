@@ -76,7 +76,7 @@ components:
       type: apiKey
       in: header
       name: Authorization
-      description: "API key prefixed with 'Bearer sx_live_...'"
+      description: "API key prefixed with 'Bearer mag3nt_live_...'"
 
   schemas:
     Error:
@@ -187,7 +187,7 @@ components:
           type: string
         key_hint:
           type: string
-          example: "sx_live_a1b2...wxyz"
+          example: "mag3nt_live_a1b2...wxyz"
         status:
           type: string
           enum: [active, revoked]
@@ -718,7 +718,7 @@ paths:
                 properties:
                   api_key:
                     type: string
-                    example: "sx_live_a1b2c3d4e5f6g7h8"
+                    example: "mag3nt_live_a1b2c3d4e5f6g7h8"
 
   /api/keys:
     get:
