@@ -4,7 +4,7 @@ info:
   version: "2026-06-02"
   description: >
     Payment infrastructure for AI agents. Issue virtual cards, pay for API access
-    via x402/AP2/MPP protocols, and settle in USDC on Base.
+    via x402/AP2/MPP protocols, and settle in USDC (Base/Solana/Tempo) or pathUSD (Tempo).
   contact:
     name: mag3nt
     url: https://mag3nt.com
@@ -449,7 +449,7 @@ paths:
                   example: "Research Agent"
                 limit_amount:
                   type: ['number', 'string']
-                  description: Maximum spend in USDC
+                  description: Maximum spend in treasury asset (e.g. USDC or pathUSD)
                   example: 50
                 network:
                   type: string
@@ -823,6 +823,20 @@ paths:
                           type: "erc20"
                           decimals: 6
                           contract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                      "solana:mainnet":
+                        - symbol: "USDC"
+                          type: "spl"
+                          decimals: 6
+                          contract: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+                      "eip155:4217":
+                        - symbol: "pathUSD"
+                          type: "erc20"
+                          decimals: 6
+                          contract: "0x20c0000000000000000000000000000000000000"
+                        - symbol: "USDC"
+                          type: "erc20"
+                          decimals: 6
+                          contract: "0x20c000000000000000000000b9537d11c60e8b50"
 
   /api/balance:
     get:
@@ -901,7 +915,7 @@ paths:
       operationId: cardsTopUp
       summary: Add funds to an existing card from treasury balance
       description: >
-        Top up an ACTIVE card by allocating additional USDC from your treasury
+        Top up an ACTIVE card by allocating additional funds (USDC or pathUSD) from your treasury
         balance. The allocation is atomic: insufficient balance returns 403.
       parameters:
         - name: id
@@ -919,7 +933,7 @@ paths:
               properties:
                 amount:
                   type: ['number', 'string']
-                  description: Amount in USDC to add
+                  description: Amount in USDC or pathUSD to add
                   example: 25
       responses:
         "200":
@@ -992,7 +1006,7 @@ paths:
                     type: string
                   balance:
                     type: number
-                    description: Token balance in human units (e.g., 42.50 USDC)
+                    description: Token balance in human units (e.g., 42.50 USDC or pathUSD)
 
   # ═══════════════ WITHDRAWALS ═══════════════
 
@@ -1002,7 +1016,7 @@ paths:
       operationId: withdrawalsCreate
       summary: Withdraw unspent funds back to your wallet
       description: >
-        Initiates a withdrawal of USDC from your treasury balance to an on-chain
+        Initiates a withdrawal of USDC or pathUSD from your treasury balance to an on-chain
         wallet address. A flat network fee is deducted from the requested amount.
         The net amount is sent on-chain via CDP; the fee is retained as platform
         revenue. Withdrawals are processed asynchronously: check status via
@@ -1801,7 +1815,7 @@ paths:
                   type: string
                 budget:
                   type: ['number', 'string']
-                  description: Total budget for the stream in USDC
+                  description: Total budget for the stream (in USDC or pathUSD)
                 tick_amount:
                   type: ['number', 'string']
                   description: Amount per tick

@@ -5,7 +5,7 @@ description: "Virtual payment cards for AI agents:issuance, controls, and lifecy
 
 ## Overview
 
-Cards are the core primitive. Each card is a virtual payment instrument backed by your USDC treasury balance. Agents use cards to pay for APIs, services, and resources.
+Cards are the core primitive. Each card is a virtual payment instrument backed by your USDC or pathUSD treasury balance. Agents use cards to pay for APIs, services, and resources.
 
 ## Card lifecycle
 
@@ -27,7 +27,7 @@ stateDiagram-v2
 ```typescript TypeScript
 const card = await mag3nt.cards.cardsCreate({
   purpose: "Research Agent",
-  limitAmount: 50,        // Max spend in USDC
+  limitAmount: 50,        // Max spend (USDC/pathUSD)
   network: "eip155:8453", // Base
   asset: "USDC",
   singleUse: false,       // Reusable
@@ -94,7 +94,7 @@ Every transaction is recorded with full metadata:
 ```typescript
 const txns = await mag3nt.cards.cardsListTransactions(cardId);
 for (const txn of txns.transactions) {
-  console.log(`${txn.amount} USDC to ${txn.merchant} via ${txn.protocol}`);
+  console.log(`${txn.amount} USDC/pathUSD to ${txn.merchant} via ${txn.protocol}`);
 }
 ```
 
@@ -123,9 +123,9 @@ test_card = sdk.cards.cards_create(
 
 ### How it works
 
-| Card network | Environment | Funds |
-|---|---|---|
 | `eip155:8453` (Base) | `production` | Real USDC |
+| `solana:mainnet` (Solana) | `production` | Real USDC |
+| `eip155:4217` (Tempo) | `production` | Real USDC or pathUSD |
 | `eip155:84532` (Base Sepolia) | `sandbox` | Test USDC:no real value |
 
 Every payment response includes an `environment` field:
