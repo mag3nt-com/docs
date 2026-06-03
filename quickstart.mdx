@@ -49,13 +49,13 @@ sdk = mag3nt.Mag3nt(
 
 ## 4. Fund your treasury
 
-Send USDC to your treasury address on Base. Check your balance:
+Send USDC or pathUSD to your treasury address (e.g. Base, Solana, or Tempo). Check your balance:
 
 <CodeGroup>
 ```typescript TypeScript
 const config = await mag3nt.status.statusGetConfig();
 console.log("Treasury address:", config.treasury?.evm);
-// Send USDC to this address on Base
+// Send USDC/pathUSD to this address
 
 const balance = await mag3nt.funding.fundingGetBalance();
 console.log("Available:", balance.balances);
@@ -63,7 +63,7 @@ console.log("Available:", balance.balances);
 ```python Python
 config = sdk.status.status_get_config()
 print("Treasury address:", config.treasury.evm)
-# Send USDC to this address on Base
+# Send USDC/pathUSD to this address
 
 balance = sdk.funding.funding_get_balance()
 print("Available:", balance.balances)

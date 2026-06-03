@@ -9,7 +9,7 @@ When an agent makes a payment, settlement is automatic:
 
 1. **Payment authorized**:deducted from the card's balance instantly
 2. **Queued for settlement**:the transaction enters the settlement pipeline
-3. **Settled on-chain**:USDC is transferred to the merchant
+3. **Settled on-chain**:USDC or pathUSD is transferred to the merchant
 4. **Confirmed**:the transaction status is updated with the on-chain hash
 
 ## Fees
@@ -17,10 +17,10 @@ When an agent makes a payment, settlement is automatic:
 | Component | Amount |
 |-----------|--------|
 | Platform fee | 0.5% of transaction |
-| Per-transaction fee | $0.001 USDC |
+| Per-transaction fee | $0.001 (USDC/pathUSD) |
 | On-chain gas | Covered by mag3nt |
 
-**Example:** A $10 payment costs $0.051:merchant receives $9.949.
+**Example:** A 10.00 token payment (USDC/pathUSD) costs 0.051 tokens: merchant receives 9.949 tokens.
 
 ## Check settlement status
 
@@ -47,7 +47,7 @@ console.log(status.settlement.settledAt);  // 2026-05-21T00:30:00Z
 - **Authorization**: Instant
 - **Instant Settlement**: Triggers immediately for network-fee efficient transactions.
 - **Batch Settlement**: Transactions that are not currently fee-efficient are grouped and settled rapidly in batches to optimize network costs.
-- **On-chain confirmation**: A few seconds on Solana/Base.
+- **On-chain confirmation**: A few seconds on Base, Solana, and Tempo.
 
 <Note>
   Settlement runs automatically. You don't need to trigger it:just check the status when you need confirmation.
