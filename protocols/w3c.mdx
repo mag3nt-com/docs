@@ -76,3 +76,12 @@ The credential is a base64url-encoded JSON object that echoes the original chall
 You don't have to manually parse these headers when making outbound payments. 
 
 When your agent hits a `402`, you pass the target URL to mag3nt's universal `payments.execute` endpoint. mag3nt automatically probes the URL, reads the `WWW-Authenticate` header, decodes the `request`, executes the on-chain transfer, and returns the signed `Authorization: Payment` credential for your agent to use.
+
+## Live Demo
+
+We built a live **Adverse Media Screening** demo to showcase the standard W3C header-based flow in action:
+
+- **Live URL**: [mag3nt-screen-demo.vercel.app](https://mag3nt-screen-demo.vercel.app/)
+- **GitHub Repository**: [mag3nt-com/mag3nt-screen-demo](https://github.com/mag3nt-com/mag3nt-screen-demo)
+
+The demo serves as a resource server that protects its screening API with `402 Payment Required` headers. You can configure your agent with a mag3nt card, query the screening API, handle the challenge, and unlock the resource. The repository provides a reference implementation for constructing W3C payment challenges and verifying agent payments on-chain.
