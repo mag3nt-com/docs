@@ -101,32 +101,26 @@ print("Status:", card.card.status)
 
 ## 6. Make a payment
 
-Use your card to make a payment. Here's an example using x402:
+Use your card to make a payment. mag3nt automatically detects the protocol (x402, MPP, or AP2) and settles on-chain:
 
 <CodeGroup>
 ```typescript TypeScript
-const payment = await mag3nt.x402.x402Pay({
+const payment = await mag3nt.payments.paymentsExecute({
   cardId: card.card.id,
   cardToken: card.card.token,
-  amount: 0.50,
-  merchant: "weather-api.com",
-  resourceUrl: "https://weather-api.com/forecast",
+  url: "https://api.weather.com/forecast",
 });
 
-console.log("Payment headers:", payment.headers);
-// Attach these headers to retry your original 402 request
+console.log("Payment successful:", payment.transactionId);
 ```
 ```python Python
-payment = sdk.x402.x402_pay(
+payment = sdk.payments.payments_execute(
     card_id=card.card.id,
     card_token=card.card.token,
-    amount=0.50,
-    merchant="weather-api.com",
-    resource_url="https://weather-api.com/forecast",
+    url="https://api.weather.com/forecast",
 )
 
-print("Payment headers:", payment.headers)
-# Attach these headers to retry your original 402 request
+print("Payment successful:", payment.transaction_id)
 ```
 </CodeGroup>
 
@@ -136,8 +130,8 @@ print("Payment headers:", payment.headers)
   <Card title="Card controls" icon="shield" href="/concepts/cards">
     MCC locks, single-use cards, spending limits
   </Card>
-  <Card title="Payment protocols" icon="arrows-left-right" href="/concepts/protocols">
-    x402, AP2, and MPP — when to use each
+  <Card title="W3C HTTP Headers" icon="arrows-left-right" href="/protocols/w3c">
+    How 402 payment challenges work
   </Card>
   <Card title="Funding" icon="wallet" href="/concepts/funding">
     Deposits, balance, multi-network support

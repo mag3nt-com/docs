@@ -34,6 +34,13 @@ card = sdk.cards.cards_create(
 # Check balance
 balance = sdk.funding.funding_get_balance()
 
+# Pay for an API
+payment = sdk.payments.payments_execute(
+    card_id=card.card.id,
+    card_token=card.card.token,
+    url="https://api.weather.com/forecast"
+)
+
 # List transactions
 txns = sdk.cards.cards_list_transactions(id=card.card.id)
 ```
@@ -72,7 +79,8 @@ except Mag3ntError as e:
 | `sdk.keys` | API key management |
 | `sdk.cards` | Card issuance, controls, and transactions |
 | `sdk.funding` | Balance and deposits |
-| `sdk.x402` | x402 protocol payments |
+| `sdk.payments` | Universal outbound payment engine |
+| `sdk.x402` | x402 protocol payments (deprecated) |
 | `sdk.ap2` | Agent-to-agent payments |
 | `sdk.mpp` | Micropayment streaming |
 | `sdk.pay_links` | Shareable payment links |

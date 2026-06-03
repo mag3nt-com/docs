@@ -1,6 +1,6 @@
 ---
 title: "Cards"
-description: "Virtual payment cards for AI agents — issuance, controls, and lifecycle."
+description: "Virtual payment cards for AI agents:issuance, controls, and lifecycle."
 ---
 
 ## Overview
@@ -81,7 +81,7 @@ Instantly block all transactions on a compromised card:
 
 ```typescript
 await mag3nt.cards.cardsFreeze(cardId);
-// Card is immediately blocked — no payments can process
+// Card is immediately blocked:no payments can process
 
 await mag3nt.cards.cardsUnfreeze(cardId);
 // Card is restored to ACTIVE
@@ -100,7 +100,7 @@ for (const txn of txns.transactions) {
 
 ## Sandbox & testnet
 
-mag3nt uses **network-based** environment isolation — no separate test API keys needed. Issue a card on a testnet network to activate sandbox mode:
+mag3nt uses **network-based** environment isolation:no separate test API keys needed. Issue a card on a testnet network to activate sandbox mode:
 
 <CodeGroup>
 ```typescript TypeScript
@@ -126,7 +126,7 @@ test_card = sdk.cards.cards_create(
 | Card network | Environment | Funds |
 |---|---|---|
 | `eip155:8453` (Base) | `production` | Real USDC |
-| `eip155:84532` (Base Sepolia) | `sandbox` | Test USDC — no real value |
+| `eip155:84532` (Base Sepolia) | `sandbox` | Test USDC:no real value |
 
 Every payment response includes an `environment` field:
 
@@ -143,4 +143,4 @@ Every payment response includes an `environment` field:
 
 ### Same API key, same endpoints
 
-Your API key works for both environments. The card's network is the boundary — not the key, not the endpoint. A single account can have both mainnet and testnet cards simultaneously.
+Your API key works for both environments. The card's network is the boundary:not the key, not the endpoint. A single account can have both mainnet and testnet cards simultaneously.

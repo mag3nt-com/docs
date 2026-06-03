@@ -26,8 +26,22 @@
             "pages": [
               "concepts/cards",
               "concepts/funding",
-              "concepts/protocols",
               "concepts/settlement"
+            ]
+          },
+          {
+            "group": "Protocols Deep Dive",
+            "pages": [
+              "protocols/w3c",
+              "protocols/x402",
+              "protocols/mpp",
+              "protocols/ap2"
+            ]
+          },
+          {
+            "group": "Agent Integration",
+            "pages": [
+              "guides/agent-integration"
             ]
           },
           {
@@ -50,6 +64,11 @@
           "anchor": "GitHub",
           "href": "https://github.com/mag3nt-com",
           "icon": "github"
+        },
+        {
+          "anchor": "Support",
+          "href": "mailto:support@mag3nt.com",
+          "icon": "envelope"
         },
         {
           "anchor": "Dashboard",
@@ -88,7 +107,8 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/mag3nt-com"
+      "github": "https://github.com/mag3nt-com",
+      "email": "mailto:support@mag3nt.com"
     }
   }
 }
