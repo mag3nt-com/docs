@@ -42,7 +42,7 @@ sdk = mag3nt.Mag3nt(
 // Generate a new key
 const key = await mag3nt.keys.keysCreate();
 console.log(key.apiKey);
-// ⚠️ Store securely — shown only once
+// ⚠️ Store securely:shown only once
 
 // List active keys
 const keys = await mag3nt.keys.keysList();
@@ -61,9 +61,9 @@ console.log(check.valid); // true
   **Never expose API keys in client-side code.** API keys grant full access to your treasury. Use them only in server-side code or secure agent environments.
 </Warning>
 
-- **Use environment variables** — never hardcode keys in source
-- **One key per agent** — if an agent is compromised, revoke only its key
-- **Rotate regularly** — generate new keys and revoke old ones
+- **Use environment variables**:never hardcode keys in source
+- **One key per agent**:if an agent is compromised, revoke only its key
+- **Rotate regularly**:generate new keys and revoke old ones
 
 ## Public endpoints
 

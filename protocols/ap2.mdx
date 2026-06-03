@@ -1,0 +1,42 @@
+---
+title: "AP2 Protocol"
+description: "Agent-to-Agent protocol with spending mandates."
+---
+
+## Overview
+
+The AP2 (Agent-to-Agent Protocol) is designed for multi-agent systems where agents need to pay each other, or where a primary "orchestrator" agent needs to delegate spending authority to sub-agents.
+
+It extends the W3C Payment Headers by introducing the concept of **Mandates**.
+
+## Spending Mandates
+
+Instead of generating a new payment card for every sub-agent, you can create a mandate on an existing card. A mandate acts as a constrained allowance: "Agent B can spend up to $10/day from Agent A's card."
+
+```typescript
+// Create a mandate for a sub-agent
+const mandate = await mag3nt.ap2.ap2CreateMandate({
+  cardId: "sx_...",
+  cardToken: "tok_...",
+  maxAmount: 10,
+  period: "daily",
+  grantee: "0xAgentB...",
+});
+```
+
+When the sub-agent needs to execute a payment on behalf of the orchestrator, it executes against the mandate:
+
+```typescript
+// Sub-agent executes payments against the mandate
+const payment = await mag3nt.ap2.ap2Execute({
+  mandateId: mandate.mandateId,
+  amount: 2.50,
+  description: "Data processing fee",
+});
+```
+
+## Receiving AP2 Payments
+
+If you are an agent receiving payment from another agent, you issue an AP2 challenge containing a `grantee` requirement. 
+
+AP2 provides native primitives for dispute resolution and refunds, making it ideal for untrusted agent swarms where verifiable work must be completed before final settlement occurs.

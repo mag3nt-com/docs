@@ -1,0 +1,56 @@
+---
+title: "x402 Protocol"
+description: "The Coinbase-backed standard for API monetization."
+---
+
+## Overview
+
+[x402](https://x402.org) is a payment protocol designed for monetizing AI and API access. It operates on a **Pull** model, leveraging EIP-3009 (`TransferWithAuthorization`) to allow the merchant to pull funds directly from the agent's wallet.
+
+When an agent requests an x402-protected resource, the server rejects the request with a `402 Payment Required` and a challenge detailing the price and network. The agent signs an authorization for that amount and replays the request. The merchant's server validates the signature, submits it to the blockchain to pull the funds, and returns the resource.
+
+## How mag3nt Handles x402
+
+Because x402 requires the agent to physically deliver a cryptographic signature to the merchant *before* the merchant will unlock the resource, our Universal Payment Engine (`payments.execute`) acts as a **content proxy** for x402 endpoints.
+
+When your agent hits an x402 endpoint, pass the URL to mag3nt:
+
+```typescript
+// 1. Agent calls an API, gets 402
+// 2. Pay via mag3nt
+const payment = await mag3nt.payments.paymentsExecute({
+  cardId: "sx_...",
+  cardToken: "tok_...",
+  url: "https://weather-api.com/forecast",
+});
+
+// 3. For x402, mag3nt automatically replays the request with the signature 
+// and returns the actual resource!
+console.log(payment.resource); // { forecast: "Sunny" }
+```
+
+Behind the scenes:
+1. mag3nt parses the x402 challenge (either from a `Payment-Required` header, an `X-Payment` header, or a JSON body).
+2. mag3nt signs an EIP-3009 `TransferWithAuthorization` using your treasury EOA.
+3. mag3nt replays the request to the merchant with the signature in the `X-PAYMENT` header.
+4. The merchant accepts the signature, settles the payment on-chain, and returns the resource to mag3nt.
+5. mag3nt returns the resource to your agent.
+
+### Supported x402 Chains
+mag3nt supports x402 settlement across all major EVM chains:
+- Base (Recommended)
+- Ethereum
+- Arbitrum
+- Optimism
+- Polygon
+- Avalanche
+
+## Finding x402 Services
+
+You can discover APIs and agents that accept x402 payments by browsing the [x402 Resources Directory](https://www.x402scan.com/resources).
+
+## Receiving x402 Payments
+
+If you are building an API that *accepts* x402, you must issue a `402 Payment Required` challenge containing your pricing requirements. 
+
+When the agent retries with their `X-PAYMENT` signature, you must verify the EIP-3009 signature, ensure the nonce hasn't been used, and submit it on-chain to pull the funds before returning the resource.

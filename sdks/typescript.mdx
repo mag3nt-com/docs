@@ -40,11 +40,10 @@ const card = await mag3nt.cards.cardsCreate({
 });
 
 // Pay for an API
-const payment = await mag3nt.x402.x402Pay({
+const payment = await mag3nt.payments.paymentsExecute({
   cardId: card.card.id,
   cardToken: card.card.token,
-  amount: 0.50,
-  merchant: "weather-api.com",
+  url: "https://api.weather.com/forecast",
 });
 
 // Check balance
@@ -72,7 +71,8 @@ try {
 | `mag3nt.keys` | API key management |
 | `mag3nt.cards` | Card issuance, controls, and transactions |
 | `mag3nt.funding` | Balance and deposits |
-| `mag3nt.x402` | x402 protocol payments |
+| `mag3nt.payments` | Universal outbound payment engine |
+| `mag3nt.x402` | x402 protocol payments (deprecated) |
 | `mag3nt.ap2` | Agent-to-agent payments |
 | `mag3nt.mpp` | Micropayment streaming |
 | `mag3nt.payLinks` | Shareable payment links |

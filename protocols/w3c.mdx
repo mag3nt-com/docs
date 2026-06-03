@@ -1,0 +1,78 @@
+---
+title: "W3C Payment Headers"
+description: "The HTTP standard that powers mag3nt's protocols."
+---
+
+## Overview
+
+The protocols supported by mag3nt (MPP, AP2, and x402) all rely on the standard HTTP `402 Payment Required` status code, originally defined in HTTP/1.1 (RFC 7231). 
+
+To negotiate and settle payments over HTTP, these protocols use the standard W3C header format:
+
+- **`WWW-Authenticate: Payment`**: Sent by the server to challenge the client for payment.
+- **`Authorization: Payment`**: Sent by the client (agent) as proof of payment to unlock the resource.
+
+This is the transport layer that makes machine-to-machine payments possible.
+
+## The Challenge (`WWW-Authenticate`)
+
+When an agent attempts to access a paid resource without valid payment, the server responds with a `402 Payment Required` and a challenge header.
+
+```http
+HTTP/1.1 402 Payment Required
+WWW-Authenticate: Payment id="chal_123", realm="api.example.com", method="mpp", intent="charge", request="base64url_encoded_payload"
+```
+
+### Anatomy of a Challenge
+
+| Parameter | Description |
+|-----------|-------------|
+| `id`      | A unique identifier for the challenge. |
+| `realm`   | The domain or namespace of the resource. |
+| `method`  | The accepted payment protocol (e.g., `x402`, `mpp`, `ap2`). |
+| `intent`  | Typically `charge` or `authorize`. |
+| `request` | A base64url-encoded payload containing the price, currency, network, and recipient details. |
+
+The `request` payload varies by method. For example, an MPP payload might decode to:
+```json
+{
+  "amount": 100000,
+  "currency": "USDC",
+  "recipient": "0xYourAddress",
+  "methodDetails": {
+    "chainId": 8453
+  }
+}
+```
+
+## The Receipt (`Authorization`)
+
+After the agent's wallet (or mag3nt's Universal Payment Engine) settles the payment on-chain, the agent retries the request with an `Authorization` header containing the cryptographic proof.
+
+```http
+GET /resource HTTP/1.1
+Host: api.example.com
+Authorization: Payment eyJjaGFsbGVuZ2UiOiB7...
+```
+
+The credential is a base64url-encoded JSON object that echoes the original challenge and includes a `payload` with the settlement proof (e.g., a transaction hash for Push payments, or a signature for Pull payments).
+
+```json
+{
+  "challenge": {
+    "id": "chal_123",
+    "method": "mpp"
+  },
+  "payload": {
+    "type": "hash",
+    "hash": "0xabcd1234..."
+  },
+  "source": "did:pkh:eip155:8453:0xAgentAddress"
+}
+```
+
+## How mag3nt Handles This
+
+You don't have to manually parse these headers when making outbound payments. 
+
+When your agent hits a `402`, you pass the target URL to mag3nt's universal `payments.execute` endpoint. mag3nt automatically probes the URL, reads the `WWW-Authenticate` header, decodes the `request`, executes the on-chain transfer, and returns the signed `Authorization: Payment` credential for your agent to use.

@@ -1,0 +1,65 @@
+---
+title: "Agent Integrations (MCP)"
+description: "Give your AI agents a wallet by installing mag3nt as an MCP server."
+---
+
+## Overview
+
+The Model Context Protocol (MCP) is an open standard that allows AI agents to interact with external tools and APIs. 
+
+By installing the `mag3nt` MCP server, you give your agents the ability to:
+- Issue their own virtual cards.
+- Check their balances.
+- Automatically pay for third-party APIs using x402, MPP, or AP2.
+
+## Installation via Streamable HTTP
+
+Anthropic recently deprecated the legacy HTTP+SSE transport (`/sse`). mag3nt now natively supports the modern **Streamable HTTP** transport (`/mcp`).
+
+### Claude Desktop
+
+To give Claude Desktop a wallet, add the following to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mag3nt": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@mag3nt/mcp-server",
+        "--transport",
+        "http",
+        "--url",
+        "https://mcp.mag3nt.com/mcp"
+      ],
+      "env": {
+        "MAG3NT_API_KEY": "sx_live_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+> [!WARNING]
+> Do **not** use `https://mcp.mag3nt.com/sse`. The SSE transport is deprecated and will be removed in a future release. Always use `--transport http` with the `/mcp` endpoint.
+
+### Cursor
+
+To install mag3nt into Cursor's Agent:
+1. Open Cursor Settings > Features > MCP.
+2. Click **+ Add new MCP server**.
+3. Set the type to `command`.
+4. Name it `mag3nt`.
+5. Enter the command: `npx -y @mag3nt/mcp-server --transport http --url https://mcp.mag3nt.com/mcp`
+6. Make sure to export your `MAG3NT_API_KEY` in your terminal environment before launching Cursor.
+
+## What Agents Can Do
+
+Once installed, your agent will have access to the following tools:
+
+- `cards_create`: Issue a new card with a specific purpose and spending limit.
+- `funding_get_balance`: Check the available treasury balance.
+- `payments_execute`: Pay for a resource at a given URL (automatically handles 402 challenges).
+
+Try asking your agent: *"Issue a card for $10 and use it to pay for data from weather-api.com."*

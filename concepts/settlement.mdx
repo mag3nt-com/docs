@@ -1,34 +1,34 @@
 ---
 title: "Settlement"
-description: "How payments settle on-chain — fees, timing, and status tracking."
+description: "How payments settle on-chain:fees, timing, and status tracking."
 ---
 
 ## How settlement works
 
 When an agent makes a payment, settlement is automatic:
 
-1. **Payment authorized** — deducted from the card's balance instantly
-2. **Batched** — transactions are grouped for efficiency
-3. **Settled on-chain** — USDC transferred to the merchant
-4. **Confirmed** — status updated with transaction hash
+1. **Payment authorized**:deducted from the card's balance instantly
+2. **Queued for settlement**:the transaction enters the settlement pipeline
+3. **Settled on-chain**:USDC is transferred to the merchant
+4. **Confirmed**:the transaction status is updated with the on-chain hash
 
 ## Fees
 
 | Component | Amount |
 |-----------|--------|
 | Platform fee | 0.5% of transaction |
-| Per-transaction fee | $0.05 USDC |
+| Per-transaction fee | $0.001 USDC |
 | On-chain gas | Covered by mag3nt |
 
-**Example:** A $10 payment costs $0.10 — merchant receives $9.90.
+**Example:** A $10 payment costs $0.051:merchant receives $9.949.
 
 ## Check settlement status
 
 ```typescript
 const status = await mag3nt.settlement.settlementGetStatus(transactionId);
 
-console.log(status.settlement.status);     // PENDING | SETTLED | FAILED
-console.log(status.settlement.feeAmount);  // 0.10
+console.log(status.settlement.status);     // PENDING | IN_PROGRESS | SETTLED | FAILED
+console.log(status.settlement.feeAmount);  // 0.051
 console.log(status.settlement.settledAt);  // 2026-05-21T00:30:00Z
 ```
 
@@ -36,17 +36,19 @@ console.log(status.settlement.settledAt);  // 2026-05-21T00:30:00Z
 
 | Status | Description |
 |--------|-------------|
-| `PENDING` | Payment authorized, awaiting settlement |
+| `SANDBOX` | Testnet payment authorized. Not settled on-chain. |
+| `PENDING` | Payment authorized, awaiting batch settlement |
+| `IN_PROGRESS`| Settlement queued and actively being processed |
 | `SETTLED` | On-chain transfer confirmed |
-| `FAILED` | Settlement failed — funds returned to card |
-| `DEFERRED` | Below threshold, settles in next batch |
+| `FAILED` | Settlement failed:funds returned to card |
 
 ## Timing
 
 - **Authorization**: Instant
-- **Settlement**: Typically within 5–15 minutes
-- **On-chain confirmation**: A few seconds on Base
+- **Instant Settlement**: Triggers immediately for network-fee efficient transactions.
+- **Batch Settlement**: Transactions that are not currently fee-efficient are grouped and settled rapidly in batches to optimize network costs.
+- **On-chain confirmation**: A few seconds on Solana/Base.
 
 <Note>
-  Settlement runs automatically. You don't need to trigger it — just check the status when you need confirmation.
+  Settlement runs automatically. You don't need to trigger it:just check the status when you need confirmation.
 </Note>

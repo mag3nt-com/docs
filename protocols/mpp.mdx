@@ -1,0 +1,85 @@
+---
+title: "MPP Protocol"
+description: "The Machine Payment Protocol for autonomous agents and micropayments."
+---
+
+## Overview
+
+The [Machine Payment Protocol (MPP)](https://mpp.dev) is a lightweight, Push-based payment standard designed for high-frequency agent interactions. It sits on top of standard [W3C HTTP Payment Headers](/protocols/w3c).
+
+Unlike x402 (which uses a Pull model where the merchant executes the transfer), MPP operates on a **Push** model. The agent broadcasts the transfer on-chain, and hands the merchant the transaction hash as proof. The merchant simply verifies the hash exists on-chain and unlocks the resource.
+
+## How mag3nt Handles MPP
+
+Because MPP is a Push protocol, mag3nt acts as a **pure payment rail** for MPP endpoints, completely removing itself from your agent's data path.
+
+When your agent hits an MPP endpoint, pass the URL to mag3nt:
+
+```typescript
+// 1. Agent calls an API, gets 402
+// 2. Pay via mag3nt
+const payment = await mag3nt.payments.paymentsExecute({
+  cardId: "sx_...",
+  cardToken: "tok_...",
+  url: "https://api.example.com/data",
+});
+
+// 3. mag3nt broadcasts the transaction and returns the cryptographic receipt
+console.log(payment.credential.header_name);  // "Authorization"
+console.log(payment.credential.header_value); // "Payment eyJjaGFs..."
+
+// 4. Your agent replays the request with the receipt!
+const response = await fetch("https://api.example.com/data", {
+  headers: {
+    [payment.credential.header_name]: payment.credential.header_value
+  }
+});
+```
+
+Behind the scenes:
+1. mag3nt parses the `WWW-Authenticate: Payment` challenge.
+2. mag3nt executes the on-chain transfer to the merchant via CDP.
+3. mag3nt constructs the MPP `Authorization: Payment` credential containing the transaction `hash` (`type: "hash"`).
+4. mag3nt hands the credential back to your agent.
+
+This architecture ensures that if your agent is downloading a 5GB file, maintaining a persistent WebSocket, or streaming an LLM response, mag3nt never has to proxy or buffer that data.
+
+## Streaming Micropayments
+
+MPP's lightweight nature makes it perfect for streaming micropayments (pay-per-token, pay-per-API-call).
+
+mag3nt supports continuous payment channels over MPP:
+
+```typescript
+// Open stream with $5 budget
+const stream = await mag3nt.mpp.mppStreamsOpen({
+  payerCardId: "sx_payer...",
+  payerCardToken: "tok_...",
+  receiverCardId: "sx_receiver...",
+  budget: 5.0,
+});
+
+// Send micro-payments as resources are consumed
+await mag3nt.mpp.mppStreamsTick({
+  streamId: stream.stream.id,
+  amount: 0.001,
+  resource: "token-generation",
+});
+
+// Check running totals
+const status = await mag3nt.mpp.mppStreamsGet(stream.stream.id);
+console.log(`Spent: ${status.stream.totalSettled} / ${status.stream.budget}`);
+
+// Close when done
+await mag3nt.mpp.mppStreamsClose({ streamId: stream.stream.id });
+```
+
+## Finding MPP Services
+
+You can discover APIs and agents that accept MPP payments by browsing the [MPP Services Directory](https://mpp.dev/services).
+
+## Receiving MPP Payments & Pay Links
+
+If you are building a service that accepts MPP, you must throw a `402 Payment Required` with a `WWW-Authenticate: Payment` challenge.
+
+To make this frictionless, mag3nt supports **Pay Links**. You can inject a mag3nt Pay Link directly into your MPP challenge via the `settleUrl` extension. This allows agents to pay you instantly, while also providing a fallback URL for humans to pay via a web UI.
