@@ -1,65 +1,189 @@
 ---
 title: "Agent Integrations (MCP)"
-description: "Give your AI agents a wallet by installing mag3nt as an MCP server."
+description: "Give your AI agents a wallet by connecting them to the mag3nt MCP server."
 ---
 
 ## Overview
 
-The Model Context Protocol (MCP) is an open standard that allows AI agents to interact with external tools and APIs. 
+The Model Context Protocol (MCP) is an open standard that lets AI agents use external tools and APIs. The hosted mag3nt MCP server turns the full mag3nt API into agent-native tools, so an assistant can issue cards, check balances, pay endpoints, and reconcile activity on its own.
 
-By installing the `mag3nt` MCP server, you give your agents the ability to:
-- Issue their own virtual cards.
-- Check their balances.
-- Automatically pay for third-party APIs using x402, MPP, or AP2.
+The server is live at [mcp.mag3nt.com](https://mcp.mag3nt.com). That page also offers one-click install links for popular clients.
 
-## Installation via Streamable HTTP
+<Info>
+  Connection URL: `https://mcp.mag3nt.com/mcp` (modern Streamable HTTP transport). Authenticate with the header `api-key-auth: <MAG3NT_API_KEY>`. Generate a key from the Developer tab at [mag3nt.com](https://mag3nt.com).
+</Info>
 
-Anthropic recently deprecated the legacy HTTP+SSE transport (`/sse`). mag3nt now natively supports the modern **Streamable HTTP** transport (`/mcp`).
+<Warning>
+  Do not use the legacy `https://mcp.mag3nt.com/sse` endpoint. The HTTP+SSE transport is deprecated. Always use the `/mcp` Streamable HTTP endpoint.
+</Warning>
 
-### Claude Desktop
+## Install
 
-To give Claude Desktop a wallet, add the following to your `claude_desktop_config.json`:
+Replace `mag3nt_live_YOUR_API_KEY` with your own key in each example.
+
+### Cursor
+
+Open the [mcp.mag3nt.com](https://mcp.mag3nt.com) install page and click Cursor for one-click setup, or add it manually under Cursor Settings > MCP:
 
 ```json
 {
   "mcpServers": {
-    "mag3nt": {
+    "Mag3nt": {
       "command": "npx",
       "args": [
         "-y",
-        "@mag3nt/mcp-server",
-        "--transport",
-        "http",
-        "--url",
-        "https://mcp.mag3nt.com/mcp"
+        "mcp-remote@0.1.25",
+        "https://mcp.mag3nt.com/mcp",
+        "--header",
+        "api-key-auth:${API_KEY_AUTH}"
       ],
       "env": {
-        "MAG3NT_API_KEY": "mag3nt_live_your_api_key_here"
+        "API_KEY_AUTH": "mag3nt_live_YOUR_API_KEY"
       }
     }
   }
 }
 ```
 
-> [!WARNING]
-> Do **not** use `https://mcp.mag3nt.com/sse`. The SSE transport is deprecated and will be removed in a future release. Always use `--transport http` with the `/mcp` endpoint.
+### Claude Code
 
-### Cursor
+```bash
+claude mcp add --transport http Mag3nt https://mcp.mag3nt.com/mcp --header "api-key-auth:mag3nt_live_YOUR_API_KEY"
+```
 
-To install mag3nt into Cursor's Agent:
-1. Open Cursor Settings > Features > MCP.
-2. Click **+ Add new MCP server**.
-3. Set the type to `command`.
-4. Name it `mag3nt`.
-5. Enter the command: `npx -y @mag3nt/mcp-server --transport http --url https://mcp.mag3nt.com/mcp`
-6. Make sure to export your `MAG3NT_API_KEY` in your terminal environment before launching Cursor.
+### Claude Desktop
 
-## What Agents Can Do
+Open Settings > Developer > Edit Config, then merge this into the `mcpServers` object in `claude_desktop_config.json` and restart Claude Desktop:
 
-Once installed, your agent will have access to the following tools:
+```json
+{
+  "mcpServers": {
+    "Mag3nt": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@0.1.25",
+        "https://mcp.mag3nt.com/mcp",
+        "--header",
+        "api-key-auth:${API_KEY_AUTH}"
+      ],
+      "env": {
+        "API_KEY_AUTH": "mag3nt_live_YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
 
-- `cards_create`: Issue a new card with a specific purpose and spending limit.
-- `funding_get_balance`: Check the available treasury balance.
-- `payments_execute`: Pay for a resource at a given URL (automatically handles 402 challenges).
+### VS Code
 
-Try asking your agent: *"Issue a card for $10 and use it to pay for data from weather-api.com."*
+Use the install link on [mcp.mag3nt.com](https://mcp.mag3nt.com), or add the same `Mag3nt` server entry shown above to your VS Code MCP configuration.
+
+### Gemini CLI
+
+```bash
+gemini mcp add --transport http Mag3nt https://mcp.mag3nt.com/mcp --header "api-key-auth:mag3nt_live_YOUR_API_KEY"
+```
+
+### Codex CLI
+
+Add this to your Codex config:
+
+```toml
+[mcp_servers.Mag3nt]
+url = "https://mcp.mag3nt.com/mcp"
+http_headers = { "api-key-auth" = "mag3nt_live_YOUR_API_KEY" }
+```
+
+## Available tools
+
+Once connected, your agent can call every capability of the mag3nt API. Tools are grouped by area below.
+
+### Cards
+
+| Tool | What it does |
+|------|--------------|
+| `cards-cards-create` | Issue a virtual card backed by treasury balance |
+| `cards-cards-bulk-create` | Issue up to 1,000 cards in one atomic request |
+| `cards-cards-list` | List all cards for the wallet |
+| `cards-cards-list-transactions` | A single card's transaction history |
+| `cards-cards-top-up` | Add funds to an active card from treasury |
+| `cards-cards-freeze` | Block all spending on a card |
+| `cards-cards-unfreeze` | Resume spending on a frozen card |
+| `cards-cards-claim` | Move a card's unspent funds back to treasury (full or partial sweep) |
+| `cards-cards-close` | Retire an empty card with no open obligations |
+| `cards-cards-update-controls` | Update MCC locks and single-use settings |
+| `transactions-list-account` | Wallet activity across every card, including closed ones |
+
+### Payments
+
+| Tool | What it does |
+|------|--------------|
+| `payments-payments-execute` | Pay any x402, AP2, or MPP endpoint with a card; auto-detects the protocol and settles on-chain |
+
+### Funding and withdrawals
+
+| Tool | What it does |
+|------|--------------|
+| `funding-funding-get-balance` | Treasury balance for the wallet |
+| `funding-funding-list-tokens` | Accepted tokens per network |
+| `funding-funding-verify` | Credit treasury from an on-chain funding transaction |
+| `funding-funding-get-wallet-balance` | Real-time on-chain balance for any address |
+| `withdrawals-withdrawals-create` | Withdraw treasury funds to a wallet |
+| `withdrawals-withdrawals-list` | Withdrawal history |
+
+### Pay links
+
+| Tool | What it does |
+|------|--------------|
+| `pay-links-pay-links-create` | Create a shareable payment link |
+| `pay-links-pay-links-list` | List your pay links |
+| `pay-links-pay-links-get` | Get public pay link details |
+| `pay-links-pay-links-cancel` | Cancel a pay link |
+| `pay-links-pay-links-get-status` | Check payment status |
+| `pay-links-pay-links-resolve` | Resolve a link for processing |
+| `pay-links-pay-links-prepare` | Discover payment requirements |
+| `pay-links-pay-links-settle` | Submit on-chain settlement proof |
+
+### Protocols
+
+| Tool | What it does |
+|------|--------------|
+| `x402-x402-discover` | Discover x402 payment requirements for a URL |
+| `x402-x402-receive` | Verify and accept an x402 payment |
+| `ap2-ap2-get-agent-card` | Get the default agent card for AP2 |
+| `ap2-ap2-list-payment-methods` | List AP2 payment methods |
+| `ap2-ap2-create-mandate` | Create a spending mandate for recurring payments |
+| `ap2-ap2-execute` | Execute a payment against a mandate |
+| `ap2-ap2-list-mandates` | List a card's mandates |
+| `ap2-ap2-settle` | Settle an AP2 payment between agents |
+| `mpp-mpp-create-session` | Create an MPP payment session |
+| `mpp-mpp-discover` | Discover MPP capabilities for a URL |
+| `mpp-mpp-receive` | Verify and accept an MPP payment |
+| `mpp-mpp-streams-open` | Open a payment stream for continuous micropayments |
+| `mpp-mpp-streams-tick` | Advance a payment stream by one tick |
+| `mpp-mpp-streams-close` | Close a payment stream |
+| `mpp-mpp-streams-get` | Get payment stream details |
+
+### Keys, webhooks, and status
+
+| Tool | What it does |
+|------|--------------|
+| `keys-keys-create` | Generate an API key (returned once) |
+| `keys-keys-list` | List API keys |
+| `keys-keys-revoke` | Revoke an API key |
+| `keys-keys-validate` | Validate an API key |
+| `webhooks-webhooks-create` | Register a signed `payment.settled` webhook |
+| `webhooks-webhooks-list` | List registered webhooks |
+| `webhooks-webhooks-delete` | Delete a webhook |
+| `settlement-settlement-get-status` | Check settlement status for a transaction |
+| `status-status-get` | Platform status, protocols, and capabilities |
+| `status-status-get-config` | Treasury addresses and token registry |
+
+## Try it
+
+Once connected, ask your agent something like:
+
+> Issue a card for $10, use it to pay for data from weather-api.com, then move any unspent funds back to my treasury and close the card.
+
+The agent will call `cards-cards-create`, `payments-payments-execute`, `cards-cards-claim`, and `cards-cards-close` in sequence, with the full record available through `transactions-list-account`.
