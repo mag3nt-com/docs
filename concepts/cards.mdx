@@ -19,7 +19,13 @@ stateDiagram-v2
     FROZEN --> ACTIVE: cardsUnfreeze
     ACTIVE --> USED: Single-use card spent
     ACTIVE --> EXPIRED: TTL elapsed
+    ACTIVE --> CLOSED: cardsClose
+    FROZEN --> CLOSED: cardsClose
+    EXPIRED --> CLOSED: cardsClose
+    USED --> CLOSED: cardsClose
 ```
+
+`CLOSED` is a terminal, one-way state. A closed card stops working immediately and leaves the wallet view, but its records are never deleted: full history stays available through the account activity feed.
 
 ## Issue a card
 
@@ -87,15 +93,46 @@ await mag3nt.cards.cardsUnfreeze(cardId);
 // Card is restored to ACTIVE
 ```
 
-## Audit trail
+## Move funds back to treasury
 
-Every transaction is recorded with full metadata:
+Sweep a card's unspent balance back into your treasury, where it can be withdrawn off-platform. For `EXPIRED` cards this always performs a full sweep. For `ACTIVE` or `FROZEN` cards, omit the amount to sweep everything, or pass an amount for a partial claim (the card stays active with the remainder). Pending charges and mandate holds are excluded from the sweepable balance, so a claim can never strand an in-flight payment.
 
 ```typescript
+// Full sweep
+await mag3nt.cards.cardsClaim(cardId);
+
+// Partial claim: pull $5 back, leave the rest on the card
+await mag3nt.cards.cardsClaim(cardId, { amount: 5 });
+```
+
+## Close a card
+
+Retire a card you no longer need. Closing is a one-way action allowed only when the card is empty and has no open obligations:
+
+- Remaining balance is zero (sweep with a claim first if needed)
+- No in-flight pending transaction
+- No open payment stream
+- No active, unexpired AP2 mandate
+
+```typescript
+await mag3nt.cards.cardsClose(cardId);
+```
+
+A closed card disappears from the wallet view. Its history is preserved and remains accessible from the account activity feed.
+
+## Audit trail
+
+Every transaction is recorded with full metadata. Read a single card's history, or the whole wallet's activity across every card (including closed ones):
+
+```typescript
+// One card
 const txns = await mag3nt.cards.cardsListTransactions(cardId);
 for (const txn of txns.transactions) {
   console.log(`${txn.amount} USDC/pathUSD to ${txn.merchant} via ${txn.protocol}`);
 }
+
+// All cards, including closed: each row is tagged with card_purpose and card_status
+const all = await mag3nt.transactions.list();
 ```
 
 ## Sandbox & testnet
