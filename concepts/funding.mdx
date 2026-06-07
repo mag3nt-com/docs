@@ -5,7 +5,7 @@ description: "Deposits, treasury balance, and multi-network support."
 
 ## How funding works
 
-1. **Deposit** USDC or pathUSD to your treasury address on Base, Solana, or Tempo
+1. **Deposit** USDC to your treasury address on any supported EVM network or Solana, or pathUSD/USDC on Tempo.
 2. **System detects** the deposit automatically (no API call needed)
 3. **Balance updates**:your treasury balance reflects the deposit
 4. **Issue cards** backed by your available balance
@@ -39,7 +39,7 @@ const balance = await mag3nt.funding.fundingGetBalance();
 // - available: Spendable balance
 ```
 
-## Supported networks
+## Supported Settlement Networks
 
 | Network | Chain ID | Asset | Contract Address |
 |---------|----------|-------|------------------|
@@ -47,3 +47,9 @@ const balance = await mag3nt.funding.fundingGetBalance();
 | Solana | solana:mainnet | USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` |
 | Tempo | eip155:4217 | pathUSD | `0x20c0000000000000000000000000000000000000` |
 | Tempo | eip155:4217 | USDC | `0x20c000000000000000000000b9537d11c60e8b50` |
+
+## Supported USDC Account Networks (Funding)
+
+You can fund your treasury by depositing USDC on the following networks:
+- **EVMs**: Optimism, Arbitrum, Polygon, Avalanche, Ethereum, Base, Base Sepolia
+- **Solana**: Mainnet
