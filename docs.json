@@ -26,7 +26,8 @@
             "pages": [
               "concepts/cards",
               "concepts/funding",
-              "concepts/settlement"
+              "concepts/settlement",
+              "concepts/token"
             ]
           },
           {
