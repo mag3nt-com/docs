@@ -767,8 +767,7 @@ components:
           $ref: "#/components/schemas/CredentialStats"
 
     CredentialStats:
-      type: object
-      nullable: true
+      type: ['object', 'null']
       description: Verifiable, ledger-derived performance for a credential. Never fabricated.
       properties:
         rxCount:
@@ -884,8 +883,7 @@ components:
           type: ['string', 'null']
           format: date-time
         vesting:
-          type: object
-          nullable: true
+          type: ['object', 'null']
           properties:
             streamUrl:
               type: string
@@ -894,12 +892,10 @@ components:
             keepBps:
               type: integer
         pendingVesting:
-          type: object
-          nullable: true
+          type: ['object', 'null']
           description: Ready-to-sign calldata to auto-finish locking the creator's kept slice in Sablier, when it is still pending.
         live:
-          type: object
-          nullable: true
+          type: ['object', 'null']
           description: Live on-chain pool reads (fee tier, liquidity, creator-owed fees), when the market is listed.
 
     Holding:
@@ -964,8 +960,7 @@ components:
             holder_explorer_url:
               type: ['string', 'null']
             crt:
-              type: object
-              nullable: true
+              type: ['object', 'null']
               properties:
                 address:
                   type: ['string', 'null']
@@ -1569,8 +1564,7 @@ paths:
                       holder_explorer_url:
                         type: ['string', 'null']
                       crt:
-                        type: object
-                        nullable: true
+                        type: ['object', 'null']
         "404":
           description: Credential not found
           content:
@@ -1895,8 +1889,7 @@ paths:
                   credentialExplorerUrl:
                     type: ['string', 'null']
                   launchFee:
-                    type: object
-                    nullable: true
+                    type: ['object', 'null']
                     properties:
                       asset:
                         type: string
@@ -2111,8 +2104,7 @@ paths:
                           type: string
                           enum: [token, weth, vesting]
                   vesting:
-                    type: object
-                    nullable: true
+                    type: ['object', 'null']
                   preview:
                     type: object
                     description: Human-readable listing preview (name, symbol, supply, price, pool key, launch protection schedule, dev-buy, disclosures).
@@ -2231,8 +2223,7 @@ paths:
                         type: string
                         example: "LISTED"
                       vesting:
-                        type: object
-                        nullable: true
+                        type: ['object', 'null']
                         properties:
                           streamId:
                             type: string
@@ -2302,8 +2293,7 @@ paths:
                   success:
                     type: boolean
                   vesting:
-                    type: object
-                    nullable: true
+                    type: ['object', 'null']
                     properties:
                       streamId:
                         type: string
@@ -2355,8 +2345,7 @@ paths:
                   ethUsd:
                     type: ['number', 'null']
                   deployment:
-                    type: object
-                    nullable: true
+                    type: ['object', 'null']
                     properties:
                       launcher:
                         type: string
@@ -3130,8 +3119,7 @@ paths:
                       status:
                         type: string
                   wallet_autorenew:
-                    type: object
-                    nullable: true
+                    type: ['object', 'null']
                     description: Everything needed to sign a USDC approve for wallet-pull auto-renew.
                     properties:
                       operator:
@@ -3164,8 +3152,7 @@ paths:
                     type: object
                     properties:
                       USDC:
-                        type: object
-                        nullable: true
+                        type: ['object', 'null']
                       MAG3NT:
                         type: object
                   trial_days:
@@ -3582,8 +3569,7 @@ paths:
                   agreement:
                     $ref: "#/components/schemas/BillingAgreement"
                   first_charge:
-                    type: object
-                    nullable: true
+                    type: ['object', 'null']
                     properties:
                       status:
                         type: string
@@ -5018,8 +5004,7 @@ paths:
                     type: string
                     description: Settlement destination - the merchant's on-chain holder for DIRECT, or the mag3nt treasury for CUSTODIAL.
                   token:
-                    type: object
-                    nullable: true
+                    type: ['object', 'null']
                     properties:
                       contract:
                         type: string
