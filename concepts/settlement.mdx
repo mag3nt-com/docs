@@ -1,16 +1,27 @@
 ---
 title: "Settlement"
-description: "How payments settle on-chain:fees, timing, and status tracking."
+description: "How payments settle on-chain: custodial batch settlement and DIRECT (non-custodial) project-token rails."
 ---
 
-## How settlement works
+## Settlement modes
 
-When an agent makes a payment, settlement is automatic:
+| Mode | What happens |
+|------|----------------|
+| **CUSTODIAL** | Payment credits a platform ledger balance, then settles on-chain in batch (USDC / pathUSD). |
+| **DIRECT** | Payment lands on-chain at the merchant's own holder address in a registered project token (ERC-20, including B20). Requires an active Native Token Rails membership. |
 
-1. **Payment authorized**:deducted from the card's balance instantly
-2. **Queued for settlement**:the transaction enters the settlement pipeline
-3. **Settled on-chain**:USDC or pathUSD is transferred to the merchant
-4. **Confirmed**:the transaction status is updated with the on-chain hash
+Set `settlement_mode` at credential issuance (`POST /api/issue`). It cannot be changed after creation.
+
+`GET /api/pay/{code}/prepare` and settle responses include `settlement_mode` so payers and agents know which path applies.
+
+## How custodial settlement works
+
+When an agent makes a custodial payment, settlement is automatic:
+
+1. **Payment authorized**: deducted from the card's balance instantly
+2. **Queued for settlement**: the transaction enters the settlement pipeline
+3. **Settled on-chain**: USDC or pathUSD is transferred to the merchant
+4. **Confirmed**: the transaction status is updated with the on-chain hash
 
 ## Fees
 
@@ -50,5 +61,15 @@ console.log(status.settlement.settledAt);  // 2026-05-21T00:30:00Z
 - **On-chain confirmation**: A few seconds on Base, Solana, and Tempo.
 
 <Note>
-  Settlement runs automatically. You don't need to trigger it:just check the status when you need confirmation.
+  Custodial settlement runs automatically. You do not need to trigger it: check status when you need confirmation.
 </Note>
+
+## DIRECT settlement
+
+DIRECT credentials do not use the custodial ledger for receives. Value is the on-chain balance of the funding asset at `holder_address`.
+
+- Membership quota meters DIRECT settles per calendar month ([Membership](/concepts/membership)).
+- Over-quota settles debit the prepaid MAG3NT fee meter ([Fee meter](/concepts/fee-meter)).
+- Register the ERC-20 first ([Project tokens](/concepts/project-tokens)).
+
+If the plan is expired or quota is exhausted (and the fee meter cannot cover overage), DIRECT prepare/discover returns unavailable.

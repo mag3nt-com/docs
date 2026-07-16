@@ -1,0 +1,42 @@
+---
+title: "Membership and Native Token Rails"
+description: "Token utility plans that unlock DIRECT settlement quotas for ERC-20 project tokens."
+---
+
+Membership unlocks **DIRECT** settlement: accept payments into your own on-chain holder, denominated in a registered **project token** (an ERC-20, including B20 tokens).
+
+It is an access fee for volume, not a cut of payments. Merchants still receive 100% of each payment amount.
+
+## Plans
+
+| Tier | Role |
+|------|------|
+| **Starter** | Entry quota of DIRECT settles per calendar month |
+| **Growth** | Higher monthly quota |
+| **Enterprise** | Unlimited / custom (contact sales) |
+
+Pricing is billed in **USDC on Base**. Checkout creates a pending invoice; you confirm with an on-chain transfer to the treasury.
+
+## API surface
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/membership` | Current plan, tier, usage, plans catalog, auto-renew state |
+| `POST` | `/api/membership/checkout` | Start USDC checkout |
+| `POST` | `/api/membership/confirm` | Confirm payment with `checkout_id` + `tx_hash` |
+| `POST` | `/api/membership/cancel` | Cancel at period end |
+| `POST` | `/api/membership/resume` | Undo a scheduled cancel while still in period |
+| `POST` | `/api/membership/auto-renew` | Enroll wallet-pull or funded auto-renew |
+| `POST` | `/api/membership/auto-renew/cancel` | Turn auto-renew off |
+
+## Auto-renew
+
+Preferred path is **wallet-pull**: you approve USDC to the operator once; Mag3nt pulls each period via AP2. `GET /api/membership` includes `wallet_autorenew` with operator address, price, and suggested allowance.
+
+If quota is exhausted or the plan is expired, DIRECT accept paths return unavailable (HTTP 402). That is intentional: pricing gates access.
+
+## Related
+
+- [Project tokens](/concepts/project-tokens)
+- [Fee meter](/concepts/fee-meter)
+- [Settlement](/concepts/settlement)

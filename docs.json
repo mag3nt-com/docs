@@ -27,7 +27,12 @@
               "concepts/cards",
               "concepts/funding",
               "concepts/settlement",
-              "concepts/token"
+              "concepts/token",
+              "concepts/membership",
+              "concepts/project-tokens",
+              "concepts/fee-meter",
+              "concepts/marketplace",
+              "concepts/credential-tokens"
             ]
           },
           {

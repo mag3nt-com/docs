@@ -1,0 +1,29 @@
+---
+title: "Project tokens (ERC-20)"
+description: "Register an ERC-20 (including B20) so DIRECT credentials can accept that asset on Native Token Rails."
+---
+
+A **project token** is an ERC-20 contract you register with Mag3nt so a DIRECT credential can accept x402 / AP2 / MPP payments in that asset.
+
+B20 tokens are ERC-20 compatible. You register them the same way (`source: b20`), including Credential Tokens (CT) you launched on Mag3nt. Bring-your-own ERC-20s use `source: byo`.
+
+The dashboard panel for this is labeled **Native Tokens**. The API and database use the name project tokens. Both refer to this registry.
+
+Do not confuse this with chain-native gas assets (ETH, SOL). Those are not registered here and are not used as DIRECT funding assets.
+
+## API surface
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/tokens/register` | Register a contract on Base or Base Sepolia (`source`: `byo` or `b20`) |
+| `GET` | `/api/tokens` | List tokens you have registered |
+
+Registration does not mint supply. It only tells Mag3nt which ERC-20 can back DIRECT credentials and pay links for your account.
+
+When issuing a credential with `settlement_mode: DIRECT`, use a registered token (or USDC) as the funding asset so prepare and settle resolve the correct on-chain destination.
+
+## Related
+
+- [Membership](/concepts/membership) for DIRECT quotas
+- [Credential Tokens](/concepts/credential-tokens) if the asset is a Mag3nt-launched CT
+- [Fee meter](/concepts/fee-meter) for prepaid MAG3NT overage fees

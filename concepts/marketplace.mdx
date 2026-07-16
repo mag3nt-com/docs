@@ -1,0 +1,37 @@
+---
+title: "Credential business transfer"
+description: "List and transfer a credential business (proof of record) against USDC on the Mag3nt marketplace."
+---
+
+The marketplace is for **transferring a credential business**, not for trading identity as a collectible.
+
+When a listing settles, Mag3nt re-keys the on-platform record (ownership, pay links, history) to the buyer against USDC. Off-platform assets and how you hand over the underlying business stay between the parties. Sellers can document transfer context in their listing materials.
+
+## What buyers get
+
+- The credential and its Mag3nt record
+- Associated pay links and payment history on Mag3nt
+- Proof of business transfer on the marketplace record
+
+## What buyers do not automatically get
+
+- Off-platform accounts, domains, or private keys outside Mag3nt
+- A guarantee of the underlying off-platform business unless you arrange that separately
+
+## API surface
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/cards/{id}/list` | List a credential for sale (USDC) |
+| `GET` | `/api/listings` | Browse open listings |
+| `GET` | `/api/listings/{id}` | Listing detail |
+| `GET` | `/api/cards/{id}/listing` | Listing for a specific credential |
+| `POST` | `/api/listings/{id}/buy` | Buy and settle the transfer |
+| `POST` | `/api/listings/{id}/cancel` | Seller cancel while still listed |
+
+Once a listing is **SOLD**, launching a Credential Token for that credential is closed. Tokenizing after a settled transfer would re-monetize the record out from under the sale.
+
+## Related
+
+- [Credential Tokens](/concepts/credential-tokens)
+- [Cards](/concepts/cards)
