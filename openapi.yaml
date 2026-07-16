@@ -1,10 +1,15 @@
 openapi: 3.1.0
 info:
   title: mag3nt API
-  version: "2026-06-04"
+  version: "2026-07-16"
   description: >
-    Payment infrastructure for AI agents. Issue virtual cards, pay for API access
-    via x402/AP2/MPP protocols, and settle in USDC on Base.
+    Payment infrastructure for AI agents. Issue virtual cards backed by
+    credentials, pay for API access via x402/AP2/MPP protocols, and settle in
+    USDC on Base. Also covers Native Token Rails membership and recurring
+    billing agreements, ERC-20 project token registration (including B20) and prepaid MAG3NT fee
+    metering for DIRECT (non-custodial) settlement, the credential marketplace
+    and Credential Token (CT) markets, account-wide token holdings,
+    and signed webhooks for payment and subscription lifecycle events.
   contact:
     name: mag3nt
     url: https://mag3nt.com
@@ -15,6 +20,8 @@ info:
 servers:
   - url: https://mag3nt.com
     description: Production
+  - url: https://staging.mag3nt.com
+    description: Staging, Base mainnet
 
 externalDocs:
   description: mag3nt documentation
@@ -66,9 +73,23 @@ tags:
   - name: Settlement
     description: On-chain settlement status
   - name: Webhooks
-    description: Signed payment.settled notifications for sellers
+    description: Signed payment and subscription lifecycle notifications for sellers
   - name: Status
     description: System health and configuration
+  - name: Membership
+    description: Native Token Rails membership tiers, checkout, and auto-renew
+  - name: Billing
+    description: Recurring billing agreements funded by AP2 open mandates
+  - name: Tokens
+    description: Register an ERC-20 contract (including B20 tokens) for DIRECT credential settlement
+  - name: Fees
+    description: Prepaid MAG3NT fee meter for DIRECT settlement overage
+  - name: Marketplace
+    description: List and transfer credential businesses (proof of record) on the mag3nt marketplace
+  - name: Credential Tokens
+    description: Credential Token (CT) launch and Uniswap V4 markets
+  - name: Holdings
+    description: Account-wide Credential Token balances
 
 components:
   securitySchemes:
@@ -151,6 +172,34 @@ components:
         remaining:
           type: ['number', 'string']
           example: 50
+        settlement_mode:
+          type: string
+          enum: [CUSTODIAL, DIRECT]
+          default: CUSTODIAL
+          description: >
+            CUSTODIAL cards hold a platform ledger balance funded from your
+            treasury. DIRECT cards are non-custodial: they accept a registered
+            project token straight to an on-chain holder, have limit_amount
+            forced to 0, and require an active Native Token Rails membership
+            to settle. DIRECT is set at issuance via settlement_mode in
+            POST /api/issue and cannot be changed after creation.
+        custody_mode:
+          type: string
+          enum: [CUSTODIAL, SELF]
+          default: CUSTODIAL
+          description: SELF credentials bind holder_address to a wallet you control (holder_mode "external" at issuance). CUSTODIAL uses a mag3nt-managed CDP smart account.
+        holder_address:
+          type: string
+          description: The credential's on-chain holder address. For DIRECT + custody_mode SELF this is the receive_address you provided; otherwise a mag3nt-provisioned smart account.
+          example: "0xabc1...def2"
+        chain_status:
+          type: string
+          enum: [NONE, PROVISIONED, ACTIVE, PROVISION_FAILED, EXTERNAL]
+          description: On-chain provisioning status of holder_address. EXTERNAL means the holder is a wallet you control (nothing for mag3nt to provision).
+        balance_source:
+          type: string
+          enum: [ledger, onchain]
+          description: Present on DIRECT cards. "onchain" means balance/remaining/limit_amount are a live balanceOf() read of the funding asset at holder_address, not a platform ledger sum.
         created_at:
           type: string
           format: date-time
@@ -403,6 +452,10 @@ components:
             mode:
               type: string
               enum: [external_protocol, protocol]
+            settlement_mode:
+              type: string
+              enum: [DIRECT, CUSTODIAL]
+              description: DIRECT means the payment landed on-chain at the merchant's own holder address. CUSTODIAL means it credited the merchant's platform ledger balance.
             amount:
               type: ['number', 'string']
             fee:
@@ -423,6 +476,537 @@ components:
               type: string
             memo:
               type: ['string', 'null']
+
+    WebhookDelivery:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "wh_abc123:evt_def456"
+        webhook_id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          enum: [DELIVERED, FAILED]
+        status_code:
+          type: integer
+          example: 200
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        url:
+          type: string
+          format: uri
+        has_payload:
+          type: boolean
+          description: Whether a stored envelope exists that can be replayed via POST /api/webhooks/deliveries/{id}/replay.
+
+    MembershipTier:
+      type: object
+      properties:
+        id:
+          type: string
+          enum: [free, starter, growth, enterprise]
+        name:
+          type: string
+        description:
+          type: string
+        monthly_direct_quota:
+          type: ['integer', 'null']
+          description: Settled DIRECT payments included per calendar month. null means unlimited (enterprise).
+        self_serve:
+          type: boolean
+          description: Whether the tier is purchasable without operator assignment. Enterprise is always false.
+
+    MembershipPlan:
+      type: object
+      properties:
+        id:
+          type: string
+          enum: [starter, growth]
+        tier:
+          type: string
+          enum: [starter, growth]
+        name:
+          type: string
+        description:
+          type: string
+        interval:
+          type: string
+          enum: [month, year]
+        price_usdc:
+          type: number
+        price_mag3nt:
+          type: number
+          description: MAG3NT-denominated price. Self-serve checkout only accepts USDC today.
+        period_days:
+          type: integer
+        monthly_direct_quota:
+          type: ['integer', 'null']
+
+    Membership:
+      type: object
+      properties:
+        wallet_address:
+          type: string
+        plan:
+          type: string
+          enum: [native_token_rails, starter, growth, enterprise]
+          description: native_token_rails is the legacy plan id, treated as starter.
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, CANCELLED, TRIAL]
+        current_period_start:
+          type: string
+          format: date-time
+        current_period_end:
+          type: string
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+        payment_asset:
+          type: ['string', 'null']
+        last_payment_id:
+          type: ['string', 'null']
+        auto_renew:
+          type: boolean
+          description: Soft renew intent. True when a funded or wallet-pull autopay agreement exists, or a legacy soft intent is set.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BillingAgreement:
+      type: object
+      description: An AP2 open-mandate-backed recurring billing agreement. The open_mandate SD-JWT is never returned over the API.
+      properties:
+        id:
+          type: string
+          example: "ba_9f8e7d6c..."
+        merchant_wallet:
+          type: string
+          description: "'mag3nt' for platform plans (membership, fee top-ups); otherwise the pay link owner's wallet."
+        payer_wallet:
+          type: string
+        payer_card_id:
+          type: string
+        pay_link_code:
+          type: ['string', 'null']
+        plan_ref:
+          type: ['string', 'null']
+          description: 'Internal plan reference, e.g. "membership:starter:month". Mutually exclusive with pay_link_code.'
+        description:
+          type: string
+        amount:
+          type: number
+        asset:
+          type: string
+        network:
+          type: string
+        trigger_type:
+          type: string
+          enum: [interval, threshold]
+        period_days:
+          type: ['integer', 'null']
+        threshold_metric:
+          type: ['string', 'null']
+          example: "mag3nt_fee_balance"
+        threshold_floor:
+          type: ['number', 'null']
+        funding_source:
+          type: string
+          enum: [CARD, WALLET]
+          description: CARD debits a custodial reserve card. WALLET pulls from the member's own wallet via an on-chain allowance (transferFrom), used for membership wallet-pull auto-renew.
+        funding_spender:
+          type: ['string', 'null']
+          description: The approved on-chain operator (spender) address for WALLET funding.
+        status:
+          type: string
+          enum: [ACTIVE, PAST_DUE, CANCELLED, COMPLETED, EXPIRED]
+        next_charge_at:
+          type: ['string', 'null']
+          format: date-time
+        last_charge_at:
+          type: ['string', 'null']
+          format: date-time
+        charges_made:
+          type: integer
+        total_charged:
+          type: number
+        failure_count:
+          type: integer
+        cancel_at_period_end:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BillingCharge:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "bch_9f8e7d6c_p1"
+        period_key:
+          type: string
+          example: "p1"
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, SETTLED, FAILED]
+        settlement_id:
+          type: ['string', 'null']
+        error:
+          type: ['string', 'null']
+        created_at:
+          type: string
+          format: date-time
+
+    ProjectToken:
+      type: object
+      description: A registered ERC-20 for DIRECT settlement. source byo = your ERC-20; source b20 = a B20 token (ERC-20 compatible), including Credential Tokens.
+      properties:
+        id:
+          type: string
+          example: "ptok_9f8e7d6c..."
+        symbol:
+          type: string
+          example: "SKILL"
+        name:
+          type: string
+        contract:
+          type: string
+          example: "0x1234...abcd"
+        network:
+          type: string
+          enum: ["eip155:8453", "eip155:84532"]
+        decimals:
+          type: integer
+        source:
+          type: string
+          enum: [byo, b20]
+
+    FeeBalance:
+      type: object
+      description: Prepaid MAG3NT balance covering the flat per-settle fee for DIRECT overage (spec 006).
+      properties:
+        balance:
+          type: number
+          description: Net balance in MAG3NT. Can go negative (debt) up to the debt floor; debits never fail an already-verified on-chain payment.
+        totalDeposited:
+          type: number
+        totalSpent:
+          type: number
+
+    FeeEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "mfd_9f8e7d6c..."
+        wallet_address:
+          type: string
+        kind:
+          type: string
+          enum: [DEPOSIT, FEE]
+        amount:
+          type: number
+        source_id:
+          type: string
+          description: tx_hash for DEPOSIT events, settlement_id for FEE events.
+        created_at:
+          type: string
+          format: date-time
+
+    Listing:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "lst_mag3nt_abc123_1719500000000_42"
+        card_id:
+          type: string
+        seller:
+          type: string
+        price:
+          type: number
+        currency:
+          type: string
+          enum: [USDC, magUSD]
+          description: Only USDC settlement is live today.
+        status:
+          type: string
+          enum: [LISTED, CANCELLED, SOLD]
+        created_at:
+          type: string
+          format: date-time
+        buyer:
+          type: ['string', 'null']
+        settled_tx:
+          type: ['string', 'null']
+        settled_at:
+          type: ['string', 'null']
+          format: date-time
+        sellable:
+          type: boolean
+          description: Mirrors the exact buy-time gate (LISTED, not frozen/seized/closed, not encumbered). Present on GET /api/listings/{id}.
+        stats:
+          $ref: "#/components/schemas/CredentialStats"
+
+    CredentialStats:
+      type: object
+      nullable: true
+      description: Verifiable, ledger-derived performance for a credential. Never fabricated.
+      properties:
+        rxCount:
+          type: integer
+        rxLifetime:
+          type: number
+        rx30d:
+          type: number
+        rx30dCount:
+          type: integer
+        lastActive:
+          type: ['string', 'null']
+          format: date-time
+        firstActive:
+          type: ['string', 'null']
+          format: date-time
+        protocols:
+          type: integer
+        balance:
+          type: number
+        ageDays:
+          type: ['integer', 'null']
+        hasCrt:
+          type: boolean
+        crtStatus:
+          type: ['string', 'null']
+        crtAddress:
+          type: ['string', 'null']
+        crtSymbol:
+          type: ['string', 'null']
+        holderAddress:
+          type: ['string', 'null']
+        chainStatus:
+          type: ['string', 'null']
+        identityToken:
+          type: ['string', 'null']
+        identityStatus:
+          type: ['string', 'null']
+
+    CrtToken:
+      type: object
+      description: A Credential Token (CT) - a fixed-supply B20 Asset claim on a credential's future revenue.
+      properties:
+        id:
+          type: string
+          example: "crt_mag3nt_abc123"
+        cardId:
+          type: string
+        creator:
+          type: string
+        tokenAddress:
+          type: string
+          description: Empty until deployed on-chain.
+        name:
+          type: string
+        symbol:
+          type: string
+        supply:
+          type: number
+        decimals:
+          type: integer
+        revenueShareBps:
+          type: integer
+        allocations:
+          type: array
+          items:
+            type: object
+            properties:
+              to:
+                type: string
+              amount:
+                type: number
+        minter:
+          type: string
+          description: Always the platform distributor/operator, never the creator (no creator MINT_ROLE).
+        status:
+          type: string
+          enum: [PENDING_DEPLOY, DEPLOYED]
+        deployTx:
+          type: string
+
+    CrtMarket:
+      type: object
+      description: Uniswap V4 fair-launch market state for a CRT (spec 008).
+      properties:
+        status:
+          type: string
+          enum: [NONE, LISTED]
+        venue:
+          type: string
+          example: "uniswap_v4"
+        listed:
+          type: boolean
+        tokenReady:
+          type: boolean
+        token:
+          type: ['string', 'null']
+        symbol:
+          type: string
+        name:
+          type: string
+        supply:
+          type: number
+        decimals:
+          type: integer
+        poolId:
+          type: ['string', 'null']
+        launchTx:
+          type: ['string', 'null']
+        creator:
+          type: string
+        lastMarketAt:
+          type: ['string', 'null']
+          format: date-time
+        vesting:
+          type: object
+          nullable: true
+          properties:
+            streamUrl:
+              type: string
+            streamId:
+              type: string
+            keepBps:
+              type: integer
+        pendingVesting:
+          type: object
+          nullable: true
+          description: Ready-to-sign calldata to auto-finish locking the creator's kept slice in Sablier, when it is still pending.
+        live:
+          type: object
+          nullable: true
+          description: Live on-chain pool reads (fee tier, liquidity, creator-owed fees), when the market is listed.
+
+    Holding:
+      type: object
+      description: A Credential Token balance held by the signed-in wallet, owned or received.
+      properties:
+        cardId:
+          type: string
+        symbol:
+          type: string
+        name:
+          type: string
+        tokenAddress:
+          type: string
+        balance:
+          type: number
+        decimals:
+          type: integer
+        network:
+          type: string
+        cdpNetwork:
+          type: string
+        isOwner:
+          type: boolean
+          description: Whether the signed-in wallet is the credential's creator.
+        lockPending:
+          type: boolean
+          description: True when a kept slice is still awaiting its Sablier lock. Owner-only.
+        sendable:
+          type: boolean
+          description: Whether the signed-in wallet may freely transfer this balance.
+        vestingStreamUrl:
+          type: ['string', 'null']
+        explorerUrl:
+          type: string
+
+    PublicCredentialResource:
+      type: object
+      description: The public developer-facing credential resource served by /api/v1/credentials.
+      properties:
+        id:
+          type: string
+        status:
+          type: ['string', 'null']
+        asset:
+          type: string
+        created_at:
+          type: ['string', 'null']
+          format: date-time
+        onchain:
+          type: object
+          properties:
+            network:
+              type: string
+            attested:
+              type: boolean
+              description: True once anything (holder or CRT) is on-chain.
+            holder_address:
+              type: ['string', 'null']
+            chain_status:
+              type: ['string', 'null']
+            holder_explorer_url:
+              type: ['string', 'null']
+            crt:
+              type: object
+              nullable: true
+              properties:
+                address:
+                  type: ['string', 'null']
+                symbol:
+                  type: ['string', 'null']
+                status:
+                  type: ['string', 'null']
+                explorer_url:
+                  type: ['string', 'null']
+        performance:
+          type: object
+          properties:
+            revenue_lifetime:
+              type: number
+            revenue_30d:
+              type: number
+            payments_lifetime:
+              type: integer
+            payments_30d:
+              type: integer
+            distinct_protocols:
+              type: integer
+            balance:
+              type: number
+            age_days:
+              type: ['integer', 'null']
+            first_active:
+              type: ['string', 'null']
+              format: date-time
+            last_active:
+              type: ['string', 'null']
+              format: date-time
+        links:
+          type: object
+          properties:
+            self:
+              type: string
+              format: uri
+            market:
+              type: ['string', 'null']
+              format: uri
 
 paths:
   # ═══════════════ CARDS ═══════════════
@@ -647,7 +1231,7 @@ paths:
         From treasury you can withdraw off-platform via POST /api/withdraw. For
         EXPIRED cards this always performs a full sweep. For ACTIVE or FROZEN
         cards, omit `amount` to sweep all available funds, or pass `amount` for a
-        partial claim — the card stays active with the remainder. Pending charges
+        partial claim - the card stays active with the remainder. Pending charges
         and mandate holds are excluded from the sweepable balance.
       parameters:
         - name: id
@@ -685,7 +1269,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: Balance changed during claim — retry
+          description: Balance changed during claim - retry
           content:
             application/json:
               schema:
@@ -815,6 +1399,1111 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Transaction"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ═══════════════ PUBLIC CREDENTIAL API (v1) ═══════════════
+  /api/v1:
+    get:
+      tags: [Cards]
+      operationId: v1GetInfo
+      summary: Public Credential API root - auth + endpoint directory
+      security: []
+      responses:
+        "200":
+          description: API directory
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: "mag3nt Credential API"
+                  version:
+                    type: string
+                    example: "1"
+                  auth:
+                    type: string
+                  endpoints:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  metering:
+                    type: string
+
+  /api/v1/credentials:
+    get:
+      tags: [Cards]
+      operationId: v1ListCredentials
+      summary: List publicly listed credentials
+      description: >
+        Third-party developer view of credentials with an active marketplace
+        listing. Rate-limited per-minute and metered against your key's
+        monthly quota (X-RateLimit-* / X-Quota-* response headers; 429 =
+        rate exceeded, 402 = quota exceeded). Testnet-funded credentials
+        never surface on a mainnet deployment.
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Credentials page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/PublicCredentialResource"
+                        - type: object
+                          properties:
+                            listing:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                price:
+                                  type: number
+                                currency:
+                                  type: string
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
+                  pages:
+                    type: integer
+        "402":
+          description: Monthly quota exceeded for your API key's plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Per-minute rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/credentials/{ref}:
+    get:
+      tags: [Cards]
+      operationId: v1GetCredential
+      summary: Get a credential by id or on-chain holder address
+      description: Returns verifiable performance plus the on-chain anchor. `ref` may be a credential id or a 0x holder address.
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Credential
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential:
+                    $ref: "#/components/schemas/PublicCredentialResource"
+        "404":
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/credentials/{ref}/onchain:
+    get:
+      tags: [Cards]
+      operationId: v1GetCredentialOnchain
+      summary: Get just the on-chain anchor for a credential
+      description: Cheaper than the full resource - holder, CRT, and explorer links only.
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: On-chain anchor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  onchain:
+                    type: object
+                    properties:
+                      network:
+                        type: string
+                      attested:
+                        type: boolean
+                      holder_address:
+                        type: ['string', 'null']
+                      chain_status:
+                        type: ['string', 'null']
+                      holder_explorer_url:
+                        type: ['string', 'null']
+                      crt:
+                        type: object
+                        nullable: true
+        "404":
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ═══════════════ MARKETPLACE ═══════════════
+  /api/cards/{id}/list:
+    post:
+      tags: [Marketplace]
+      operationId: marketplaceListCard
+      summary: List a credential for sale on the marketplace
+      description: >
+        Lists an owned, unencumbered credential for sale. Selling transfers
+        the whole economic account (paylinks, history, delegation) to the
+        buyer atomically against payment. Only USDC settlement is live today.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [price]
+              properties:
+                price:
+                  type: number
+                  example: 500
+                currency:
+                  type: string
+                  enum: [USDC]
+                  default: USDC
+      responses:
+        "200":
+          description: Listing created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  listing:
+                    $ref: "#/components/schemas/Listing"
+        "400":
+          description: Invalid price or currency
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Card not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Credential is encumbered (frozen/seized/collateralized)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/listings:
+    get:
+      tags: [Marketplace]
+      operationId: marketplaceListListings
+      summary: Browse open marketplace listings
+      description: >
+        Public discovery of sellable credentials, enriched with verifiable
+        performance stats. Testnet-funded listings never surface on a mainnet
+        deployment. Supports optional pagination (page + limit) and sorting.
+      security: []
+      parameters:
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, price_asc, price_desc, revenue_desc]
+            default: newest
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 100
+      responses:
+        "200":
+          description: Listings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listings:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Listing"
+                  explorerBase:
+                    type: string
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+                  limit:
+                    type: integer
+                  sort:
+                    type: string
+
+  /api/listings/{id}:
+    get:
+      tags: [Marketplace]
+      operationId: marketplaceGetListing
+      summary: Get a single listing (public, works for shared links)
+      description: >
+        Returns the listing regardless of state, so a shared link of a
+        sold/frozen credential still renders truthfully. `sellable` mirrors
+        the exact buy-time gate.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Listing detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listing:
+                    $ref: "#/components/schemas/Listing"
+                  explorerBase:
+                    type: string
+        "404":
+          description: Listing not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listing:
+                    type: 'null'
+
+  /api/cards/{id}/listing:
+    get:
+      tags: [Marketplace]
+      operationId: marketplaceGetCardListing
+      summary: Get the most recent listing for a credential (public)
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Latest listing for the credential, or null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listing:
+                    oneOf:
+                      - $ref: "#/components/schemas/Listing"
+                      - type: 'null'
+
+  /api/listings/{id}/buy:
+    post:
+      tags: [Marketplace]
+      operationId: marketplaceBuyListing
+      summary: Buy a listed credential
+      description: >
+        Escrows the buyer's USDC card funds, atomically re-keys credential
+        ownership (and its pay links), pays out the seller net of the
+        marketplace take rate, and captures the fee. Any failure after
+        escrow fully unwinds - no half-completed sale, no lost funds.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [buyer_card_id]
+              properties:
+                buyer_card_id:
+                  type: string
+                  description: An ACTIVE USDC card you own to pay from.
+      responses:
+        "200":
+          description: Purchase settled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  listing:
+                    $ref: "#/components/schemas/Listing"
+                  feeQuote:
+                    type: object
+                  payoutTx:
+                    type: string
+        "400":
+          description: Pay card is not USDC, wrong network, or self-custody sale not yet supported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Pay card or listing not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Listing is not available (already sold/cancelled/encumbered)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    example: "NOT_LISTED"
+
+  /api/listings/{id}/cancel:
+    post:
+      tags: [Marketplace]
+      operationId: marketplaceCancelListing
+      summary: Cancel your own open listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+                    example: "CANCELLED"
+        "404":
+          description: Listing not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ═══════════════ CREDENTIAL TOKENS (CRT) ═══════════════
+  /api/cards/{id}/crt:
+    get:
+      tags: [Credential Tokens]
+      operationId: credentialTokensGetForCard
+      summary: Get the Credential Token (CT) for a credential, if launched
+      description: >
+        Also returns deploy progress, the owner's own MAG3NT launch-fee
+        balance/allowance context, on-chain holder balance of the CRT, and
+        whether tokenizing is currently available on this network.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CRT detail (crt is null if none has been launched yet)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  crt:
+                    oneOf:
+                      - $ref: "#/components/schemas/CrtToken"
+                      - type: 'null'
+                  deployPhase:
+                    type: string
+                    enum: [live, deploying, retrying]
+                  crtAvailable:
+                    type: boolean
+                  explorerBase:
+                    type: string
+                  explorerUrl:
+                    type: ['string', 'null']
+                  explorerTx:
+                    type: ['string', 'null']
+                  credentialExplorerUrl:
+                    type: ['string', 'null']
+                  launchFee:
+                    type: object
+                    nullable: true
+                    properties:
+                      asset:
+                        type: string
+                      token:
+                        type: string
+                      network:
+                        type: string
+                      amount:
+                        type: number
+                      account:
+                        type: string
+                      balance:
+                        type: number
+                      sufficient:
+                        type: boolean
+                      treasury:
+                        type: string
+                      spender:
+                        type: string
+                  holder:
+                    type: string
+                  holderBalance:
+                    type: number
+                  decimals:
+                    type: integer
+                  network:
+                    type: string
+                  cdpNetwork:
+                    type: string
+                  lockPending:
+                    type: boolean
+                  sendable:
+                    type: boolean
+                  vestingStreamUrl:
+                    type: ['string', 'null']
+
+  /api/cards/{id}/launch-crt:
+    post:
+      tags: [Credential Tokens]
+      operationId: credentialTokensLaunch
+      summary: Launch a Credential Token for an owned credential
+      description: >
+        Mints a fixed-supply B20 Asset representing a claim on the
+        credential's future revenue. Charges the MAG3NT launch fee from the
+        owner's own wallet (never the credential's holder). One CRT per
+        credential; a second launch returns the existing one. Deploys
+        on-chain synchronously when possible, else leaves it PENDING_DEPLOY
+        for the deploy cron to retry.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, symbol, supply]
+              properties:
+                name:
+                  type: string
+                symbol:
+                  type: string
+                supply:
+                  type: number
+                revenue_share_bps:
+                  type: integer
+                  description: Basis points of future revenue routed to CRT holders, capped by an operator-tunable maximum.
+                allocations:
+                  type: array
+                  description: Must sum exactly to supply. Defaults to a single allocation of the full supply to "creator".
+                  items:
+                    type: object
+                    properties:
+                      to:
+                        type: string
+                        description: An EVM address or a known bucket label (creator, treasury).
+                      amount:
+                        type: number
+                decimals:
+                  type: integer
+                  default: 18
+                fee_approve_tx:
+                  type: string
+                  description: On-chain approve tx hash authorizing the treasury to pull the MAG3NT launch fee, for external (non-managed) wallets.
+      responses:
+        "200":
+          description: CRT launched (or PENDING_DEPLOY)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  crt:
+                    $ref: "#/components/schemas/CrtToken"
+        "400":
+          description: Invalid name/symbol/supply/allocations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "402":
+          description: Insufficient MAG3NT to pay the launch fee, or payment required/invalid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    example: "INSUFFICIENT_MAG3NT"
+        "403":
+          description: Credential not owned by caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Credential is encumbered, already transferred, or fee payment is still pending
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+
+  /api/cards/{id}/crt-market/prepare:
+    post:
+      tags: [Credential Tokens]
+      operationId: credentialTokensMarketPrepare
+      summary: Prepare an unsigned Uniswap V4 fair-launch listing for a CRT
+      description: >
+        Builds the unsigned calldata to list an already-deployed CRT on
+        Uniswap V4 (Doppler-style fair launch). Mag3nt never signs or
+        custodies liquidity; the creator wallet signs the returned
+        transaction and any required token/WETH approvals.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keepBps:
+                  type: integer
+                  description: Basis points of supply the creator keeps, vested via Sablier. Capped at 2500 (25%).
+                startingMcapEth:
+                  type: number
+                startingValuationUsd:
+                  type: number
+                  description: Converted to ETH server-side using the live ETH price. Ignored when startingMcapEth is provided.
+                devBuyEth:
+                  type: number
+                  description: Optional creator buy at open, in ETH.
+                slippageBps:
+                  type: integer
+                  default: 50
+      responses:
+        "200":
+          description: Prepared transaction + preview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  chainId:
+                    type: integer
+                  to:
+                    type: string
+                  data:
+                    type: string
+                  value:
+                    type: string
+                    example: "0"
+                  approvals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        token:
+                          type: string
+                        spender:
+                          type: string
+                        amount:
+                          type: string
+                        data:
+                          type: string
+                        kind:
+                          type: string
+                          enum: [token, weth, vesting]
+                  vesting:
+                    type: object
+                    nullable: true
+                  preview:
+                    type: object
+                    description: Human-readable listing preview (name, symbol, supply, price, pool key, launch protection schedule, dev-buy, disclosures).
+        "400":
+          description: Invalid input, dev-buy too large, or wrong network
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+        "403":
+          description: Credential not owned by caller
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+        "404":
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+        "503":
+          description: CRT is not deployed yet, or markets are not available on this network
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+
+  /api/cards/{id}/crt-market/confirm:
+    post:
+      tags: [Credential Tokens]
+      operationId: credentialTokensMarketConfirm
+      summary: Confirm a signed CRT market listing transaction
+      description: >
+        Verifies the listing receipt on-chain (never trusts client-supplied
+        addresses), reads back pool state, and records the market as LISTED.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [txHash, chainId]
+              properties:
+                txHash:
+                  type: string
+                chainId:
+                  type: integer
+                name:
+                  type: string
+                symbol:
+                  type: string
+                decimals:
+                  type: integer
+                vestingTx:
+                  type: string
+                  description: Optional Sablier stream-creation tx hash for the creator's kept slice.
+                keepBps:
+                  type: integer
+      responses:
+        "200":
+          description: Market confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  market:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      poolId:
+                        type: string
+                      creator:
+                        type: string
+                      pair:
+                        type: string
+                      supply:
+                        type: string
+                      liquidity:
+                        type: string
+                      txHash:
+                        type: string
+                      chainId:
+                        type: integer
+                      marketStatus:
+                        type: string
+                        example: "LISTED"
+                      vesting:
+                        type: object
+                        nullable: true
+                        properties:
+                          streamId:
+                            type: string
+                          streamUrl:
+                            type: string
+                          keepBps:
+                            type: integer
+        "400":
+          description: Wrong chain, tx failed, or the market event token does not match this credential
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+        "404":
+          description: Credential not found, or transaction not found yet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+
+  /api/cards/{id}/crt-market/vesting-confirm:
+    post:
+      tags: [Credential Tokens]
+      operationId: credentialTokensMarketVestingConfirm
+      summary: Record the Sablier vesting lock for a CRT's kept slice
+      description: >
+        Automatic completion for an already-live market whose creator kept
+        slice is still un-vested. Verifies the Sablier stream receipt and
+        stores the public stream URL. Not typically called directly by
+        integrators - the client invokes it when it detects a pending lock.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vestingTx]
+              properties:
+                vestingTx:
+                  type: string
+                keepBps:
+                  type: integer
+      responses:
+        "200":
+          description: Vesting recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  vesting:
+                    type: object
+                    nullable: true
+                    properties:
+                      streamId:
+                        type: string
+                      streamUrl:
+                        type: string
+                      keepBps:
+                        type: integer
+        "400":
+          description: Invalid vestingTx, or the transaction reverted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+
+  /api/cards/{id}/crt-market:
+    get:
+      tags: [Credential Tokens]
+      operationId: credentialTokensGetMarket
+      summary: Get live Uniswap V4 market details for a CRT
+      description: >
+        Returns pool state read live from-chain (fee tier, liquidity,
+        creator-owed fees) plus any pending auto-vesting-lock calldata.
+        Self-heals the DB row if a listing landed on-chain but the confirm
+        call never completed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Market details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                    description: Whether CRT V4 markets are deployed on this network at all.
+                  chainId:
+                    type: integer
+                  ethUsd:
+                    type: ['number', 'null']
+                  deployment:
+                    type: object
+                    nullable: true
+                    properties:
+                      launcher:
+                        type: string
+                      hook:
+                        type: string
+                      feeLocker:
+                        type: string
+                      lpLocker:
+                        type: string
+                  market:
+                    oneOf:
+                      - $ref: "#/components/schemas/CrtMarket"
+                      - type: 'null'
+                  constants:
+                    type: object
+                    description: Launch-protection constants (fee schedule, dev-buy cap, default valuation).
+                  explorerBase:
+                    type: string
+
+  /api/crt-markets:
+    get:
+      tags: [Credential Tokens]
+      operationId: credentialTokensListMarkets
+      summary: List all live CRT Uniswap V4 markets
+      security: []
+      parameters:
+        - name: chainId
+          in: query
+          schema:
+            type: integer
+          description: Must match this deployment's configured CRT V4 chain, or the request is rejected.
+      responses:
+        "200":
+          description: Live markets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chainId:
+                    type: integer
+                  markets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cardId:
+                          type: string
+                        token:
+                          type: string
+                        symbol:
+                          type: string
+                        name:
+                          type: string
+                        supply:
+                          type: number
+                        decimals:
+                          type: integer
+                        poolId:
+                          type: string
+                        deployTx:
+                          type: ['string', 'null']
+                        listTx:
+                          type: ['string', 'null']
+                        creator:
+                          type: string
+                        listedAt:
+                          type: ['string', 'null']
+                          format: date-time
+        "400":
+          description: chainId does not match this deployment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  chainId:
+                    type: integer
+
+  /api/mag3nt:
+    get:
+      tags: [Credential Tokens]
+      operationId: credentialTokensGetMag3ntFeeInfo
+      summary: Get the MAG3NT fee token and current CRT launch fee
+      description: Also returns the authenticated owner's own on-chain MAG3NT balance (the wallet the launch fee is paid from).
+      responses:
+        "200":
+          description: MAG3NT token + fee info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                    example: "MAG3NT"
+                  token:
+                    type: string
+                  network:
+                    type: string
+                  decimals:
+                    type: integer
+                  explorerToken:
+                    type: ['string', 'null']
+                  crtLaunchFee:
+                    type: number
+                  account:
+                    type: string
+                  balance:
+                    type: number
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ═══════════════ HOLDINGS ═══════════════
+  /api/holdings:
+    get:
+      tags: [Holdings]
+      operationId: holdingsList
+      summary: List every Credential Token balance the wallet holds
+      description: >
+        Scans the deployed CRT universe and reads on-chain balanceOf for the
+        signed-in wallet, so tokens received from another mag3nt account
+        (not tied to a credential you own) are visible too.
+      responses:
+        "200":
+          description: Holdings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holdings:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Holding"
+                  wallet:
+                    type: string
+                  network:
+                    type: string
+                  cdpNetwork:
+                    type: string
         "401":
           description: Unauthorized
           content:
@@ -1115,6 +2804,926 @@ paths:
                     type: number
                     description: Token balance in human units (e.g., 42.50 USDC)
 
+  # ═══════════════ PROJECT TOKEN REGISTRY ═══════════════
+  /api/tokens/register:
+    post:
+      tags: [Tokens]
+      operationId: tokensRegister
+      summary: Register an ERC-20 (including B20) for DIRECT credentials
+      description: >
+        Registers an ERC-20 contract on Base or Base Sepolia for DIRECT credentials
+        (x402/ap2/mpp). Use source byo for your own ERC-20, or source b20 for a
+        B20 token (ERC-20 compatible), including Credential Tokens. Validates
+        the contract on-chain and reads decimals/symbol/name. Idempotent per
+        (owner, network, contract).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contract]
+              properties:
+                contract:
+                  type: string
+                  example: "0x1234...abcd"
+                network:
+                  type: string
+                  enum: ["eip155:8453", "eip155:84532"]
+                  default: "eip155:8453"
+                symbol:
+                  type: string
+                  description: Optional symbol override (falls back to the on-chain symbol()).
+                source:
+                  type: string
+                  enum: [byo, b20]
+                  default: byo
+      responses:
+        "200":
+          description: Registered (or already registered)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    $ref: "#/components/schemas/ProjectToken"
+                  already_added:
+                    type: boolean
+        "400":
+          description: Invalid contract, unsupported network, or the contract does not implement decimals()
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/tokens:
+    get:
+      tags: [Tokens]
+      operationId: tokensList
+      summary: List your registered ERC-20 project tokens
+      parameters:
+        - name: network
+          in: query
+          schema:
+            type: string
+          description: Optional CAIP-2 filter.
+      responses:
+        "200":
+          description: Registered tokens + the active account network
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProjectToken"
+                  network:
+                    type: object
+                    properties:
+                      caip2:
+                        type: string
+                      chain_id:
+                        type: integer
+                      name:
+                        type: string
+                      label:
+                        type: string
+                      is_testnet:
+                        type: boolean
+                      supported:
+                        type: array
+                        items:
+                          type: string
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ═══════════════ FEES (prepaid MAG3NT meter) ═══════════════
+  /api/fees/balance:
+    get:
+      tags: [Fees]
+      operationId: feesGetBalance
+      summary: Get your prepaid MAG3NT fee meter balance
+      description: >
+        Every settled DIRECT payment above your membership quota debits a
+        flat MAG3NT fee from this prepaid balance. Debits always succeed
+        (an already-verified on-chain payment can never be refused), so the
+        balance can go negative up to debt_floor; past that, pay-link
+        discovery for your DIRECT credentials is withheld until you deposit.
+      responses:
+        "200":
+          description: Fee balance + recent events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance:
+                    $ref: "#/components/schemas/FeeBalance"
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FeeEvent"
+                  fee_per_settle:
+                    type: number
+                  debt_floor:
+                    type: number
+                  token:
+                    type: object
+                    properties:
+                      address:
+                        type: string
+                      network:
+                        type: string
+                      decimals:
+                        type: integer
+                      symbol:
+                        type: string
+                        example: "MAG3NT"
+                  treasury:
+                    type: string
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/fees/deposit:
+    post:
+      tags: [Fees]
+      operationId: feesDeposit
+      summary: Credit a verified on-chain MAG3NT transfer to your fee meter
+      description: >
+        Submits an on-chain MAG3NT transfer to the treasury for verification.
+        Idempotent on tx_hash. Nets off any existing debt automatically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tx_hash, amount]
+              properties:
+                tx_hash:
+                  type: string
+                amount:
+                  type: number
+      responses:
+        "200":
+          description: Deposit credited
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  credited:
+                    type: boolean
+                  balance:
+                    $ref: "#/components/schemas/FeeBalance"
+        "400":
+          description: Missing/invalid tx_hash or amount, or on-chain verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Treasury not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: RPC unavailable - retry later
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ═══════════════ MEMBERSHIP (Native Token Rails) ═══════════════
+  /api/membership:
+    get:
+      tags: [Membership]
+      operationId: membershipGet
+      summary: Get your membership, tier, usage, plans, and auto-renew state
+      description: >
+        Native Token Rails membership tiers unlock DIRECT (project-token)
+        settlement volume by calendar-month quota. Merchants always receive
+        100% of payment amounts; membership is an access fee, not a cut.
+        Also returns everything needed to sign a USDC approve for wallet-pull
+        auto-renew.
+      responses:
+        "200":
+          description: Membership snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  membership:
+                    oneOf:
+                      - $ref: "#/components/schemas/Membership"
+                      - type: 'null'
+                  active:
+                    type: boolean
+                  tier:
+                    type: string
+                    enum: [free, starter, growth, enterprise]
+                  tiers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MembershipTier"
+                  usage:
+                    type: object
+                    properties:
+                      month:
+                        type: string
+                        example: "2026-07"
+                      direct_settles:
+                        type: integer
+                      quota:
+                        type: ['integer', 'null']
+                      remaining:
+                        type: ['integer', 'null']
+                      over_quota:
+                        type: boolean
+                      overage_fee_mag3nt:
+                        type: number
+                  plans:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MembershipPlan"
+                  payments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        plan:
+                          type: string
+                        interval:
+                          type: string
+                          enum: [month, year]
+                        amount:
+                          type: number
+                        asset:
+                          type: string
+                        network:
+                          type: string
+                        tx_hash:
+                          type: string
+                        period_start:
+                          type: string
+                          format: date-time
+                        period_end:
+                          type: string
+                          format: date-time
+                        created_at:
+                          type: string
+                          format: date-time
+                  autopay:
+                    type: object
+                    description: Current auto-renew state. `enrolled` false when off; `soft` true for a legacy no-funds intent.
+                    properties:
+                      enrolled:
+                        type: boolean
+                      soft:
+                        type: boolean
+                      mode:
+                        type: ['string', 'null']
+                        enum: [wallet, funded, soft, null]
+                      agreement:
+                        oneOf:
+                          - $ref: "#/components/schemas/BillingAgreement"
+                          - type: 'null'
+                      next_charge_at:
+                        type: ['string', 'null']
+                        format: date-time
+                      amount:
+                        type: ['number', 'null']
+                      interval:
+                        type: string
+                        enum: [month, year]
+                      plan_ref:
+                        type: string
+                      status:
+                        type: string
+                  wallet_autorenew:
+                    type: object
+                    nullable: true
+                    description: Everything needed to sign a USDC approve for wallet-pull auto-renew.
+                    properties:
+                      operator:
+                        type: string
+                      price:
+                        type: number
+                      interval:
+                        type: string
+                      suggested_allowance:
+                        type: number
+                        description: Approve roughly a year of periods up front so the member signs once.
+                      token:
+                        type: object
+                        properties:
+                          address:
+                            type: string
+                          decimals:
+                            type: integer
+                          symbol:
+                            type: string
+                          network:
+                            type: string
+                          cdpNetwork:
+                            type: string
+                  treasury:
+                    type: string
+                  network:
+                    type: string
+                  tokens:
+                    type: object
+                    properties:
+                      USDC:
+                        type: object
+                        nullable: true
+                      MAG3NT:
+                        type: object
+                  trial_days:
+                    type: integer
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/membership/checkout:
+    post:
+      tags: [Membership]
+      operationId: membershipCheckout
+      summary: Start a membership checkout (USDC only)
+      description: >
+        Creates a pending checkout with a payment amount + treasury address.
+        Confirm with POST /api/membership/confirm once the transfer lands.
+        MAG3NT membership checkout is currently disabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tier:
+                  type: string
+                  enum: [starter, growth]
+                  default: starter
+                interval:
+                  type: string
+                  enum: [month, year]
+                  default: month
+                asset:
+                  type: string
+                  enum: [USDC]
+                  default: USDC
+      responses:
+        "200":
+          description: Checkout created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: "mco_9f8e7d6c..."
+                      wallet_address:
+                        type: string
+                      plan:
+                        type: string
+                      interval:
+                        type: string
+                      asset:
+                        type: string
+                      amount:
+                        type: number
+                      network:
+                        type: string
+                      status:
+                        type: string
+                        example: "PENDING"
+                      expires_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                  plan:
+                    $ref: "#/components/schemas/MembershipPlan"
+                  payment:
+                    type: object
+                    properties:
+                      treasury:
+                        type: string
+                      amount:
+                        type: number
+                      asset:
+                        type: string
+                      network:
+                        type: string
+                      token:
+                        type: object
+                      instructions:
+                        type: string
+        "400":
+          description: MAG3NT checkout disabled, or invalid tier/interval
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/membership/confirm:
+    post:
+      tags: [Membership]
+      operationId: membershipConfirm
+      summary: Confirm a membership checkout with an on-chain transfer
+      description: >
+        Verifies the tx on-chain against the checkout amount/asset/network
+        and activates or renews the membership period. Polls briefly for
+        transient confirmation lag; terminal failures (revert, wrong
+        sender/recipient/amount) are never masked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checkout_id, tx_hash]
+              properties:
+                checkout_id:
+                  type: string
+                tx_hash:
+                  type: string
+      responses:
+        "200":
+          description: Activated (or already activated on idempotent replay)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  activated:
+                    type: boolean
+                  membership:
+                    $ref: "#/components/schemas/Membership"
+                  payment_id:
+                    type: ['string', 'null']
+        "400":
+          description: Checkout not pending/expired, mismatch, or on-chain verification failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  reason:
+                    type: string
+                  retryable:
+                    type: boolean
+        "404":
+          description: Checkout not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: RPC unavailable - retry later
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/membership/cancel:
+    post:
+      tags: [Membership]
+      operationId: membershipCancel
+      summary: Cancel membership at period end
+      description: Tears down any funded auto-renew agreement and releases its reserve. A soft (no-funds) auto-renew intent is left intact so resume restores it.
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  membership:
+                    $ref: "#/components/schemas/Membership"
+        "404":
+          description: No membership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/membership/resume:
+    post:
+      tags: [Membership]
+      operationId: membershipResume
+      summary: Undo a scheduled cancel while still in-period
+      responses:
+        "200":
+          description: Resumed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  membership:
+                    $ref: "#/components/schemas/Membership"
+        "404":
+          description: No membership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/membership/auto-renew:
+    post:
+      tags: [Membership]
+      operationId: membershipEnableAutoRenew
+      summary: Enroll in membership auto-renew
+      description: >
+        mode "wallet": records a wallet-pull authorization backed by a USDC
+        approve you already signed to the treasury operator (allowance must
+        cover at least one period); the cron pulls transferFrom each period.
+        Omitting mode: reserves MAG3NT/USDC into a custodial autopay card
+        when balance covers a renewal, else records a soft (no-funds) intent
+        paid from your signed-in wallet at period end.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode:
+                  type: string
+                  enum: [wallet]
+                  description: Omit for the custodial/soft path.
+                tier:
+                  type: string
+                  enum: [starter, growth]
+                interval:
+                  type: string
+                  enum: [month, year]
+                periods:
+                  type: integer
+                  description: Custodial path only - number of periods to prefund.
+                approve_tx:
+                  type: string
+                  description: Wallet path - the on-chain approve tx you just signed (used only to disambiguate a still-confirming allowance).
+      responses:
+        "200":
+          description: Already enrolled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  enrolled:
+                    type: boolean
+                  soft:
+                    type: boolean
+                  mode:
+                    type: string
+                    enum: [wallet, funded]
+                  already_enrolled:
+                    type: boolean
+                  agreement:
+                    oneOf:
+                      - $ref: "#/components/schemas/BillingAgreement"
+                      - type: 'null'
+                  card_id:
+                    type: string
+                  reserve:
+                    type: number
+                  periods_funded:
+                    type: integer
+                  price:
+                    type: number
+                  next_charge_at:
+                    type: ['string', 'null']
+                    format: date-time
+                  allowance:
+                    type: number
+        "201":
+          description: Newly enrolled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  enrolled:
+                    type: boolean
+                  soft:
+                    type: boolean
+        "400":
+          description: No active plan to auto-renew, or plan has no self-serve auto-renew
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Wallet-pull allowance does not yet cover a period
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    example: "approval_required"
+                  required:
+                    type: number
+                  allowance:
+                    type: number
+                  operator:
+                    type: string
+
+  /api/membership/auto-renew/cancel:
+    post:
+      tags: [Membership]
+      operationId: membershipCancelAutoRenew
+      summary: Cancel membership auto-renew
+      description: Cancels the underlying AP2 agreement (funded or wallet-pull) and clears the auto_renew flag. Releases any unused custodial reserve.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                at_period_end:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  agreement:
+                    oneOf:
+                      - $ref: "#/components/schemas/BillingAgreement"
+                      - type: 'null'
+                  released:
+                    type: number
+        "404":
+          description: No active auto-renew
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ═══════════════ BILLING AGREEMENTS ═══════════════
+  /api/billing/agreements:
+    post:
+      tags: [Billing]
+      operationId: billingCreateAgreement
+      summary: Create a recurring billing agreement from an AP2 open mandate
+      description: >
+        Consent is an AP2 open mandate carrying a payment.recurring
+        constraint. Provide exactly one of pay_link_code (merchant billing)
+        or plan_ref (platform plans, e.g. membership). Interval agreements
+        charge period 1 inline unless defer_first_charge is set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [open_mandate]
+              properties:
+                open_mandate:
+                  type: string
+                  description: AP2 open mandate SD-JWT with a payment.recurring constraint.
+                pay_link_code:
+                  type: string
+                plan_ref:
+                  type: string
+                  example: "membership:starter:month"
+                amount:
+                  type: number
+                  description: Must not exceed the mandate's per-period cap.
+                description:
+                  type: string
+                trigger:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [interval, threshold]
+                      default: interval
+                    metric:
+                      type: string
+                      enum: [mag3nt_fee_balance]
+                    floor:
+                      type: number
+                defer_first_charge:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Agreement created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agreement:
+                    $ref: "#/components/schemas/BillingAgreement"
+                  first_charge:
+                    type: object
+                    nullable: true
+                    properties:
+                      status:
+                        type: string
+                        enum: [charged, skipped, failed, canceled, completed]
+                      charge_id:
+                        type: string
+                      settlement_id:
+                        type: string
+                      error:
+                        type: string
+        "400":
+          description: Missing open_mandate, or provided both/neither of pay_link_code and plan_ref
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "402":
+          description: First charge failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Pay link or funding card not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Invalid or expired open mandate, or amount/currency mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags: [Billing]
+      operationId: billingListAgreements
+      summary: List your billing agreements
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [payer, merchant]
+            default: payer
+      responses:
+        "200":
+          description: Agreements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agreements:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BillingAgreement"
+
+  /api/billing/agreements/{id}:
+    get:
+      tags: [Billing]
+      operationId: billingGetAgreement
+      summary: Get a billing agreement and its charge history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agreement + charges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agreement:
+                    $ref: "#/components/schemas/BillingAgreement"
+                  charges:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BillingCharge"
+        "403":
+          description: Not the payer or merchant on this agreement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/billing/agreements/{id}/cancel:
+    post:
+      tags: [Billing]
+      operationId: billingCancelAgreement
+      summary: Cancel a billing agreement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                at_period_end:
+                  type: boolean
+                  default: false
+                  description: Only applies to interval-trigger agreements.
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agreement:
+                    $ref: "#/components/schemas/BillingAgreement"
+        "403":
+          description: Not your agreement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Agreement not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # ═══════════════ WITHDRAWALS ═══════════════
 
   /api/withdraw:
@@ -1292,6 +3901,81 @@ paths:
               card_id: "sx_a66a6666-..."
               card_token: "tok_3b9fe670-..."
               url: "https://api.weather.com/forecast"
+      responses:
+        "200":
+          description: Payment successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  transaction_id:
+                    type: string
+                  amount_debited:
+                    type: number
+                  merchant_amount:
+                    type: number
+                  platform_fee:
+                    type: number
+                  token:
+                    type: string
+                  network:
+                    type: string
+                  protocol:
+                    type: string
+                  settlement:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      tx_hash:
+                        type: string
+        "400":
+          description: Invalid request
+        "403":
+          description: Insufficient balance or card inactive
+        "410":
+          description: Endpoint removed or resource gone
+        "422":
+          description: No payable option offered by merchant
+
+  /api/pay/external:
+    post:
+      tags: [Payments]
+      operationId: paymentsExecuteExternal
+      summary: Execute a universal outbound payment (alias of /api/pay)
+      description: Identical handler to POST /api/pay. Prefer this path when disambiguating from the /api/pay/{code}/* pay-link routes.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, card_token, url]
+              properties:
+                card_id:
+                  type: string
+                  description: Card identifier (sx_...)
+                card_token:
+                  type: string
+                  description: Card secret token (tok_...)
+                url:
+                  type: string
+                  description: The external payment-protected URL to pay
+                method:
+                  type: string
+                  default: POST
+                  description: HTTP method to use when probing the URL
+                body:
+                  type: object
+                  description: JSON request body to trigger a priced challenge
+                headers:
+                  type: object
+                  description: Optional headers for the probe request
       responses:
         "200":
           description: Payment successful
@@ -2193,6 +4877,12 @@ paths:
       tags: [Pay Links]
       operationId: payLinksResolve
       summary: Resolve a pay link for payment processing
+      description: >
+        Unified resolver used by the universal checkout surface. For a DIRECT
+        credential whose merchant has no active membership plan or has used
+        up their monthly quota, returns the pricing-gate error body instead
+        of link details so a payer is never sent to a merchant who cannot
+        legitimately accept.
       security: []
       parameters:
         - name: code
@@ -2210,13 +4900,81 @@ paths:
                 properties:
                   type:
                     type: string
-                    enum: [receive, merchant]
+                    enum: [receive]
+                  link_type:
+                    type: string
+                    enum: [SINGLE, MULTI]
+                  code:
+                    type: string
+                  amount:
+                    type: ['number', 'null']
+                  asset:
+                    type: string
+                  network:
+                    type: string
+                  memo:
+                    type: string
+                  status:
+                    type: string
+                  uses:
+                    type: integer
+                  max_uses:
+                    type: integer
+                  expires_at:
+                    type: ['string', 'null']
+                    format: date-time
+                  accepted_protocols:
+                    type: array
+                    items:
+                      type: string
+        "402":
+          description: DIRECT merchant has no active membership plan, or unpaid overage debt exceeds the fee meter's floor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    enum: [no_active_plan, quota_exhausted, fee_balance_exhausted]
+        "404":
+          description: Payment code not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "410":
+          description: Pay link expired, cancelled, or used
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    example: "receive"
+                  status:
+                    type: string
+                    enum: [EXPIRED, CANCELLED, USED]
+                  error:
+                    type: string
 
   /api/pay/{code}/prepare:
     get:
       tags: [Pay Links]
       operationId: payLinksPrepare
       summary: Prepare payment intent for a pay link
+      description: >
+        Returns everything a payer's wallet or agent needs to build a
+        transaction: intent details, settlement destination, token contract,
+        and settlement_mode. For a DIRECT credential the destination is the
+        merchant's own on-chain holder address instead of the mag3nt
+        treasury; DIRECT also enforces the membership pricing gate and the
+        MAG3NT fee-meter debt floor before returning payment instructions.
+        Agents (JSON Accept header, non-browser user agent) get HTTP 402
+        with WWW-Authenticate; browsers get HTTP 200.
       security: []
       parameters:
         - name: code
@@ -2226,21 +4984,111 @@ paths:
             type: string
       responses:
         "200":
-          description: Payment intent
+          description: Payment intent (browser)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   intent:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      amount:
+                        type: ['number', 'null']
+                      asset:
+                        type: string
+                      network:
+                        type: string
+                      memo:
+                        type: string
+                      status:
+                        type: string
+                      type:
+                        type: string
+                      uses:
+                        type: integer
+                      max_uses:
+                        type: integer
+                      expires_at:
+                        type: ['string', 'null']
+                        format: date-time
+                  treasury:
                     type: string
+                    description: Settlement destination - the merchant's on-chain holder for DIRECT, or the mag3nt treasury for CUSTODIAL.
+                  token:
+                    type: object
+                    nullable: true
+                    properties:
+                      contract:
+                        type: string
+                      decimals:
+                        type: integer
+                      type:
+                        type: string
                   accepted_protocols:
                     type: array
                     items:
                       type: string
-                  treasury_address:
+                  agent_payable:
+                    type: boolean
+                    description: False for open-amount links - an autonomous agent has no fixed price to pay against.
+                  amount_mode:
                     type: string
-                  token_contract:
+                    enum: [fixed, open]
+                  settlement:
+                    type: object
+                    properties:
+                      address:
+                        type: string
+                      network:
+                        type: string
+                      asset:
+                        type: string
+                      token_contract:
+                        type: ['string', 'null']
+                      token_decimals:
+                        type: ['integer', 'null']
+                      mode:
+                        type: string
+                        enum: [DIRECT, CUSTODIAL]
+                  settlement_mode:
+                    type: string
+                    enum: [DIRECT, CUSTODIAL]
+                  is_owner:
+                    type: boolean
+        "402":
+          description: Payment required (agent) - same body as 200, with WWW-Authenticate; or a DIRECT pricing-gate block
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    enum: [no_active_plan, quota_exhausted, fee_balance_exhausted]
+        "410":
+          description: Pay link expired, cancelled, or used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: DIRECT holder is not provisioned yet - retry shortly
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  code:
+                    type: string
+                    example: "holder_not_ready"
+                  message:
                     type: string
 
   /api/pay/{code}/settle:
@@ -2248,6 +5096,15 @@ paths:
       tags: [Pay Links]
       operationId: payLinksSettle
       summary: Settle a pay link payment
+      description: >
+        Universal settlement for both humans and agents. Mode is detected
+        from the body: `tx_hash` (+ optional `protocol`) settles an on-chain
+        wallet or external-protocol payment (verified on-chain before
+        crediting); `protocol` + `payer_card_id` + `payer_card_token` settles
+        an internal platform card-to-card protocol payment. The destination
+        (merchant treasury vs. on-chain holder) and pricing gate follow the
+        same DIRECT/CUSTODIAL rules as prepare; the settled settlement_mode
+        is delivered on the `payment.settled` webhook, not in this response.
       security: []
       parameters:
         - name: code
@@ -2262,32 +5119,116 @@ paths:
             schema:
               oneOf:
                 - type: object
+                  description: Internal protocol mode (platform card pays a pay link).
+                  required: [protocol, payer_card_id, payer_card_token]
                   properties:
                     protocol:
                       type: string
+                      enum: [x402, ap2, mpp]
                     payer_card_id:
                       type: string
                     payer_card_token:
                       type: string
+                    idempotency_key:
+                      type: string
                 - type: object
+                  description: Wallet or external-protocol mode (on-chain payment, verified before crediting).
+                  required: [tx_hash, from_address]
                   properties:
                     tx_hash:
                       type: string
                     from_address:
                       type: string
+                    protocol:
+                      type: string
+                      enum: [x402, ap2, mpp]
+                      description: Defaults to x402 when omitted for a plain wallet transfer.
                     amount:
                       type: ['number', 'string']
+                      description: Required for an open-amount link; ignored for a fixed-amount link.
       responses:
         "200":
-          description: Settlement processed
+          description: Settlement processed (or already settled on idempotent replay)
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                  transaction_id:
+                  status:
+                    type: string
+                    enum: [SETTLED, ALREADY_SETTLED]
+                  settlement_id:
+                    type: string
+                  amount:
+                    type: ['number', 'string']
+                  fee:
+                    type: ['number', 'string']
+                  net_amount:
+                    type: ['number', 'string']
+                  tx_hash:
+                    type: string
+                  mode:
+                    type: string
+                    enum: [external_protocol, protocol]
+                  protocol:
+                    type: string
+                    enum: [x402, ap2, mpp]
+                  receipt_id:
+                    type: string
+        "400":
+          description: Invalid amount, missing from_address, unaccepted protocol, or on-chain verification failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  status:
+                    type: string
+                    example: "REJECTED"
+        "401":
+          description: Invalid payer card token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Card or link not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many settlement attempts from this IP - retry after a minute
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Failed to verify the on-chain transaction - retry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  status:
+                    type: string
+                    example: "REJECTED"
+        "503":
+          description: Settlement is paused for maintenance, DIRECT holder not ready, or on-chain verification is unavailable (no RPC configured)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  status:
+                    type: string
+                  code:
                     type: string
 
   # ═══════════════ SETTLEMENT ═══════════════
@@ -2420,6 +5361,176 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/webhooks/{id}/rotate:
+    post:
+      tags: [Webhooks]
+      operationId: webhooksRotateSecret
+      summary: Rotate a webhook's signing secret
+      description: The new secret is returned ONCE and cannot be retrieved again. The prior secret stops verifying immediately.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Secret rotated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  secret:
+                    type: string
+                    example: "whsec_1a2b3c4d5e6f..."
+                  note:
+                    type: string
+        "404":
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/webhooks/{id}/test:
+    post:
+      tags: [Webhooks]
+      operationId: webhooksSendTest
+      summary: Send a signed test payment.settled event
+      description: >
+        Delivers a signed test event (event id prefixed `evt_test_`,
+        `data.test: true`) to the webhook's endpoint so you can verify your
+        handler end-to-end before real money moves.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Test event delivered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  status_code:
+                    type: integer
+                  attempts:
+                    type: integer
+                  event_id:
+                    type: string
+        "400":
+          description: Webhook is not active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/webhooks/deliveries:
+    get:
+      tags: [Webhooks]
+      operationId: webhooksListDeliveries
+      summary: Get your webhook delivery log
+      description: Paginated delivery history across your webhooks. Payload bodies are not included in the list; use has_payload to check replayability.
+      parameters:
+        - name: webhook_id
+          in: query
+          schema:
+            type: string
+          description: Filter to one webhook. Must belong to the authenticated wallet.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Delivery log
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deliveries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WebhookDelivery"
+                  total:
+                    type: integer
+        "403":
+          description: webhook_id does not belong to the authenticated wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/webhooks/deliveries/{id}/replay:
+    post:
+      tags: [Webhooks]
+      operationId: webhooksReplayDelivery
+      summary: Re-deliver a stored webhook event
+      description: Re-POSTs the exact stored envelope (same event id, freshly signed) to the webhook's endpoint. Requires a stored payload - deliveries logged before payload storage was added cannot be replayed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The delivery id, formatted "{webhook_id}:{event_id}".
+      responses:
+        "200":
+          description: Replay attempted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  status_code:
+                    type: integer
+                  attempts:
+                    type: integer
+                  event_id:
+                    type: string
+        "400":
+          description: No stored payload for this delivery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Not your webhook
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Delivery not found
           content:
             application/json:
               schema:

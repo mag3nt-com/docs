@@ -176,9 +176,27 @@ Once connected, your agent can call every capability of the mag3nt API. Tools ar
 | `webhooks-webhooks-create` | Register a signed `payment.settled` webhook |
 | `webhooks-webhooks-list` | List registered webhooks |
 | `webhooks-webhooks-delete` | Delete a webhook |
+| `webhooks-webhooks-rotate` | Rotate the webhook signing secret (shown once) |
+| `webhooks-webhooks-test` | Send a signed test `payment.settled` delivery |
+| `webhooks-webhooks-list-deliveries` | Paginated delivery log |
+| `webhooks-webhooks-replay-delivery` | Re-POST a stored delivery envelope |
 | `settlement-settlement-get-status` | Check settlement status for a transaction |
 | `status-status-get` | Platform status, protocols, and capabilities |
 | `status-status-get-config` | Treasury addresses and token registry |
+
+### Membership, tokens, marketplace, and CT markets
+
+After Speakeasy regenerates MCP from the updated OpenAPI, these areas are also exposed as tools (names follow Speakeasy tagging). Until regeneration lands, call them via the REST API:
+
+| Area | Paths |
+|------|--------|
+| Membership | `/api/membership`, checkout, confirm, cancel, resume, auto-renew |
+| Project tokens | `/api/tokens/register`, `/api/tokens` |
+| Fee meter | `/api/fees/balance`, `/api/fees/deposit` |
+| Billing agreements | `/api/billing/agreements` |
+| Marketplace | `/api/cards/{id}/list`, `/api/listings`, buy/cancel |
+| Credential Tokens | `/api/cards/{id}/crt`, launch-crt, crt-market prepare/confirm |
+| Holdings | `/api/holdings` |
 
 ## Try it
 

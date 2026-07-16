@@ -1,0 +1,21 @@
+---
+title: "DIRECT fee meter"
+description: "Prepaid MAG3NT balance that covers per-settle fees when you exceed membership quota."
+---
+
+Every settled DIRECT payment above your membership quota debits a flat fee in **$MAG3NT**. The fee meter is a prepaid balance on your account. If the meter is empty while you are over quota, discovery and accept for DIRECT credentials are withheld until you deposit.
+
+Merchants still receive 100% of the payment amount. The meter only covers Mag3nt's access fee for overage volume.
+
+## API surface
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/fees/balance` | Current prepaid MAG3NT balance and recent fee events |
+| `POST` | `/api/fees/deposit` | Credit the meter after a verified on-chain MAG3NT transfer |
+
+## Related
+
+- [Membership](/concepts/membership)
+- [Project tokens](/concepts/project-tokens)
+- [$MAG3NT token](/concepts/token)
